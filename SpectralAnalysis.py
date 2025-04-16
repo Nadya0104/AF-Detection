@@ -173,7 +173,7 @@ def load_and_segment_data(dataset_path, min_fragment_size=MIN_FRAGMENT_SIZE,
     
 #     return mean, std, rms, skewness, kurtosis
 
-def extract_spectral_entropy(ppg_segment, fs=SAMPLING_RATE):
+def extract_spectral_entropy(ppg_segment):
     """
     Extract Spectral Entropy from the frequency domain
     """
@@ -533,6 +533,299 @@ def train_and_evaluate_models(X_train, X_val, X_test, y_train, y_val, y_test, fe
     
     return best_model, scaler
 
+from sklearn.feature_selection import RFECV
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import roc_auc_score
+from itertools import combinations
+from tqdm import tqdm
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+
+def exhaustive_feature_selection(X_train, y_train, X_val, X_test, feature_names, 
+                                max_features=5, scoring='roc_auc', 
+                                classifier=None):
+    """
+    Perform exhaustive feature selection by evaluating all possible feature combinations
+    up to a maximum number of features.
+    
+    Parameters:
+    -----------
+    X_train : array-like
+        Training features
+    y_train : array-like
+        Training labels
+    X_val : array-like
+        Validation features
+    X_test : array-like
+        Test features
+    feature_names : list
+        Names of all features
+    max_features : int, default=5
+        Maximum number of features to consider in combinations
+        (to avoid combinatorial explosion)
+    scoring : str, default='roc_auc'
+        Scoring metric to evaluate feature combinations
+    classifier : sklearn estimator, default=None
+        Classifier to use for evaluating feature combinations
+        If None, RandomForestClassifier with default parameters is used
+        
+    Returns:
+    --------
+    X_train_selected : array-like
+        Training data with selected features
+    X_val_selected : array-like
+        Validation data with selected features
+    X_test_selected : array-like
+        Test data with selected features
+    selected_feature_names : list
+        Names of selected features
+    selected_indices : list
+        Indices of selected features
+    """
+    from sklearn.ensemble import RandomForestClassifier
+    
+    # Set default classifier if none provided
+    if classifier is None:
+        classifier = RandomForestClassifier(random_state=42)
+    
+    print(f"Starting exhaustive feature selection (max {max_features} features)...")
+    print(f"Total number of features: {len(feature_names)}")
+    
+    # Calculate total number of combinations to evaluate
+    total_combinations = sum(
+        [len(list(combinations(range(len(feature_names)), r))) 
+         for r in range(1, min(max_features+1, len(feature_names)+1))]
+    )
+    print(f"Will evaluate {total_combinations} feature combinations")
+    
+    # Start timing
+    start_time = time.time()
+    
+    # Initialize tracking variables
+    best_score = 0
+    best_feature_set = None
+    all_results = []
+    
+    # Create cross-validation strategy
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    
+    # Evaluate all feature combinations from 1 to max_features
+    for num_features in range(1, min(max_features+1, len(feature_names)+1)):
+        print(f"\nEvaluating combinations of {num_features} features...")
+        
+        # Generate all combinations of features of size num_features
+        feature_combinations = list(combinations(range(len(feature_names)), num_features))
+        
+        # Create progress bar
+        pbar = tqdm(total=len(feature_combinations))
+        
+        # Evaluate each combination
+        for feature_indices in feature_combinations:
+            # Extract features for this combination
+            X_train_subset = X_train[:, feature_indices]
+            
+            # Initialize scores list for cross-validation
+            cv_scores = []
+            
+            # Perform cross-validation
+            for train_idx, val_idx in cv.split(X_train_subset, y_train):
+                # Split data
+                X_train_cv, X_val_cv = X_train_subset[train_idx], X_train_subset[val_idx]
+                y_train_cv, y_val_cv = y_train[train_idx], y_train[val_idx]
+                
+                # Train model
+                classifier.fit(X_train_cv, y_train_cv)
+                
+                # Evaluate
+                if scoring == 'roc_auc':
+                    y_val_prob = classifier.predict_proba(X_val_cv)[:, 1]
+                    score = roc_auc_score(y_val_cv, y_val_prob)
+                else:
+                    score = classifier.score(X_val_cv, y_val_cv)
+                
+                cv_scores.append(score)
+            
+            # Calculate mean score across CV folds
+            mean_cv_score = np.mean(cv_scores)
+            
+            # Store result
+            feature_names_subset = [feature_names[i] for i in feature_indices]
+            result = {
+                'num_features': num_features,
+                'feature_indices': feature_indices,
+                'feature_names': feature_names_subset,
+                'score': mean_cv_score
+            }
+            all_results.append(result)
+            
+            # Update best if improved
+            if mean_cv_score > best_score:
+                best_score = mean_cv_score
+                best_feature_set = feature_indices
+            
+            # Update progress bar
+            pbar.update(1)
+        
+        # Close progress bar
+        pbar.close()
+    
+    # Calculate elapsed time
+    elapsed_time = time.time() - start_time
+    print(f"\nExhaustive feature selection completed in {elapsed_time:.2f} seconds")
+    
+    # Display best result
+    if best_feature_set is not None:
+        selected_indices = list(best_feature_set)
+        selected_feature_names = [feature_names[i] for i in selected_indices]
+        
+        print(f"\nBest feature combination ({len(selected_indices)} features, score: {best_score:.4f}):")
+        for i, feature_name in enumerate(selected_feature_names):
+            print(f"  {i+1}. {feature_name}")
+    else:
+        print("No feature combination improved upon baseline")
+        return None
+    
+    # Create visualization of top feature combinations
+    all_results.sort(key=lambda x: x['score'], reverse=True)
+    top_n = min(10, len(all_results))
+    
+    plt.figure(figsize=(12, 8))
+    
+    # Plot top combinations
+    combinations = [', '.join([name[:10] for name in result['feature_names']]) for result in all_results[:top_n]]
+    scores = [result['score'] for result in all_results[:top_n]]
+    num_features = [result['num_features'] for result in all_results[:top_n]]
+    
+    colors = plt.cm.viridis(np.array(num_features) / max(num_features))
+    
+    plt.barh(range(top_n), scores, color=colors)
+    plt.yticks(range(top_n), combinations)
+    plt.xlabel(f'{scoring.upper()} Score')
+    plt.title('Top Feature Combinations')
+    
+    # Add colorbar
+    sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=min(num_features), vmax=max(num_features)))
+    sm.set_array([])
+    cbar = plt.colorbar(sm)
+    cbar.set_label('Number of Features')
+    
+    plt.tight_layout()
+    plt.savefig('visualizations/top_feature_combinations.png')
+    plt.close()
+    
+    # Prepare outputs - selected datasets
+    X_train_selected = X_train[:, selected_indices]
+    X_val_selected = X_val[:, selected_indices]
+    X_test_selected = X_test[:, selected_indices]
+    
+    # Save full results table
+    import pandas as pd
+    results_df = pd.DataFrame(all_results)
+    results_df = results_df.sort_values('score', ascending=False)
+    results_df.to_csv('visualizations/exhaustive_feature_selection_results.csv', index=False)
+    
+    return X_train_selected, X_val_selected, X_test_selected, selected_feature_names, selected_indices
+
+
+def rfe_feature_selection(X_train, y_train, X_val, X_test, feature_names, 
+                         classifier=None, cv=5, step=1):
+    """
+    Perform feature selection using Recursive Feature Elimination with Cross-Validation (RFECV)
+    
+    Parameters:
+    -----------
+    X_train : array-like
+        Training features
+    y_train : array-like
+        Training labels
+    X_val : array-like
+        Validation features
+    X_test : array-like
+        Test features
+    feature_names : list
+        Names of all features
+    classifier : sklearn estimator, default=None
+        Classifier to use for RFE
+        If None, RandomForestClassifier with default parameters is used
+    cv : int, default=5
+        Number of cross-validation folds
+    step : int, default=1
+        Number of features to remove at each iteration
+        
+    Returns:
+    --------
+    X_train_selected : array-like
+        Training data with selected features
+    X_val_selected : array-like
+        Validation data with selected features
+    X_test_selected : array-like
+        Test data with selected features
+    selected_feature_names : list
+        Names of selected features
+    selected_indices : list
+        Indices of selected features
+    """
+    from sklearn.ensemble import RandomForestClassifier
+    
+    # Set default classifier if none provided
+    if classifier is None:
+        classifier = RandomForestClassifier(random_state=42)
+    
+    print("Performing Recursive Feature Elimination with Cross-Validation (RFECV)...")
+    
+    # Create RFECV object
+    rfecv = RFECV(
+        estimator=classifier,
+        step=step,
+        cv=StratifiedKFold(n_splits=cv, shuffle=True, random_state=42),
+        scoring='roc_auc',
+        min_features_to_select=1,
+        n_jobs=-1
+    )
+    
+    # Fit on training data
+    rfecv.fit(X_train, y_train)
+    
+    # Get selected features
+    selected_indices = np.where(rfecv.support_)[0]
+    selected_feature_names = [feature_names[i] for i in selected_indices]
+    
+    # Report results
+    print(f"\nOptimal number of features: {rfecv.n_features_}")
+    print(f"Selected {len(selected_indices)} out of {len(feature_names)} features:")
+    
+    # Get feature rankings (lower is better)
+    feature_ranking = rfecv.ranking_
+    
+    # Sort selected features by importance for display
+    selected_ranking = [(feature_names[i], feature_ranking[i]) for i in selected_indices]
+    selected_ranking.sort(key=lambda x: x[1])
+    
+    for i, (feature, rank) in enumerate(selected_ranking):
+        print(f"  {i+1}. {feature} (Rank: {rank})")
+    
+    # Visualize CV results
+    plt.figure(figsize=(10, 6))
+    plt.xlabel("Number of features selected")
+    plt.ylabel("Mean test accuracy")
+    plt.plot(range(1, len(rfecv.cv_results_['mean_test_score']) + 1), 
+             rfecv.cv_results_['mean_test_score'], 'o-')
+    
+    # Add vertical line at optimal number of features
+    plt.axvline(x=rfecv.n_features_, color='r', linestyle='--')
+    plt.title('Recursive Feature Elimination with Cross-Validation')
+    plt.tight_layout()
+    plt.savefig('visualizations/rfecv_feature_selection.png')
+    plt.close()
+    
+    # Prepare selected datasets
+    X_train_selected = X_train[:, selected_indices]
+    X_val_selected = X_val[:, selected_indices]
+    X_test_selected = X_test[:, selected_indices]
+    
+    return X_train_selected, X_val_selected, X_test_selected, selected_feature_names, selected_indices
+
 def main():
     
     print("Loading and segmenting data...")
@@ -543,10 +836,10 @@ def main():
     print("\nExtracting features...")
     X_features, feature_names = extract_features(X_segments)
     
-    # Check for any NaN or inf values in features
-    if np.isnan(X_features).any() or np.isinf(X_features).any():
-        print("Warning: NaN or Inf values detected in features, replacing with zeros")
-        X_features = np.nan_to_num(X_features)
+    # # Check for any NaN or inf values in features
+    # if np.isnan(X_features).any() or np.isinf(X_features).any():
+    #     print("Warning: NaN or Inf values detected in features, replacing with zeros")
+    #     X_features = np.nan_to_num(X_features)
     
     # Visualize features
     visualize_features(X_features, y, feature_names)
@@ -566,8 +859,14 @@ def main():
     
     # Perform feature selection
     print("\nPerforming feature selection...")
-    X_train_selected, X_val_selected, X_test_selected, selected_features, selected_indices = feature_selection(
-        X_train, y_train, X_val, X_test, feature_names
+
+    # X_train_selected, X_val_selected, X_test_selected, selected_features, selected_indices = feature_selection(
+    #     X_train, y_train, X_val, X_test, feature_names
+    # )
+
+    X_train_selected, X_val_selected, X_test_selected, selected_features, selected_indices = exhaustive_feature_selection(
+    X_train, y_train, X_val, X_test, feature_names, 
+    max_features=5  
     )
     
     # Train and evaluate models with selected features
