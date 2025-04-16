@@ -1,0 +1,11 @@
+SpEn
+VLF_Power
+LF_Power
+HF_Power
+LF_HF_Ratio
+MAVcA
+AEcA
+STDcA
+Detail1_Energy
+Detail2_Energy
+Detail3_Energy
