@@ -11,7 +11,7 @@ if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
 # Dataset path and recording info
-dataset_path = r"Dataset\AF_WFDB"
+dataset_path = r"Dataset\AF_wfdb"
 recording_prefix = "mimic_perform_af_"
 num_recordings = 19
 

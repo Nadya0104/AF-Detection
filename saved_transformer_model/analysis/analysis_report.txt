@@ -1,0 +1,22 @@
+Transformer Model Analysis Report
+==================================================
+
+Model Performance Metrics:
+-------------------------
+Accuracy: 0.7775
+Precision: 0.8678
+Recall: 0.6963
+F1: 0.7726
+Auc: 0.8861
+
+Model Information:
+-------------------------
+Architecture: TransformerModel
+Input: PPG signals (500 samples @ 50 Hz)
+Output: Binary classification (AF vs Normal)
+
+Notes:
+-------------------------
+- Model was trained on Google Colab
+- Uses sliding window approach for longer signals
+- Employs multi-head attention mechanism

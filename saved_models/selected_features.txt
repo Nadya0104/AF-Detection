@@ -1,8 +1,0 @@
-SpEn
-HF_Power
-MAVcA
-AEcA
-STDcA
-Detail1_Energy
-Detail2_Energy
-Detail3_Energy
