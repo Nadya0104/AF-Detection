@@ -3,11 +3,11 @@ Transformer Model Analysis Report
 
 Model Performance Metrics:
 -------------------------
-Accuracy: 0.7775
-Precision: 0.8678
-Recall: 0.6963
-F1: 0.7726
-Auc: 0.8861
+Accuracy: 0.8583
+Precision: 0.8578
+Recall: 0.8857
+F1: 0.8716
+Auc: 0.9257
 
 Model Information:
 -------------------------
