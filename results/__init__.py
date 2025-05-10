@@ -12,19 +12,13 @@ from .model_results import (
 )
 
 from .visualization import (
-    plot_training_history,
     plot_confusion_matrix,
     plot_roc_curve,
     plot_feature_distributions,
     plot_feature_correlations,
     plot_spectral_feature_importance,
-    plot_segment_length_distribution
-)
-
-from .transformer_analysis import (
-    analyze_transformer_model,
-    evaluate_transformer_on_test,
-    create_transformer_report
+    plot_rfecv_results,
+    create_results_report
 )
 
 __all__ = [
@@ -34,14 +28,11 @@ __all__ = [
     'save_roc_curve',
     'save_feature_importance',
     'save_model_summary',
-    'plot_training_history',
     'plot_confusion_matrix',
     'plot_roc_curve',
     'plot_feature_distributions',
     'plot_feature_correlations',
     'plot_spectral_feature_importance',
-    'plot_segment_length_distribution',
-    'analyze_transformer_model',
-    'evaluate_transformer_on_test',
-    'create_transformer_report'
+    'plot_rfecv_results',
+    'create_results_report'
 ]

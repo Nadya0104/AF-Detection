@@ -48,20 +48,22 @@ def extract_frequency_bands(ppg_segment, fs=125):
     # Calculate energy in each band
     total_power = np.sum(power_spectrum)
     
-    vlf_power = np.sum(power_spectrum[(xf >= vlf_band[0]) & (xf < vlf_band[1])]) if total_power > 0 else 0
+    # vlf_power = np.sum(power_spectrum[(xf >= vlf_band[0]) & (xf < vlf_band[1])]) if total_power > 0 else 0
     lf_power = np.sum(power_spectrum[(xf >= lf_band[0]) & (xf < lf_band[1])]) if total_power > 0 else 0
     hf_power = np.sum(power_spectrum[(xf >= hf_band[0]) & (xf < hf_band[1])]) if total_power > 0 else 0
     
     # Normalize by total power
     if total_power > 0:
-        vlf_power_norm = vlf_power / total_power
+        #vlf_power_norm = vlf_power / total_power
         lf_power_norm = lf_power / total_power
         hf_power_norm = hf_power / total_power
         lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
     else:
-        vlf_power_norm, lf_power_norm, hf_power_norm, lf_hf_ratio = 0, 0, 0, 0
+        # vlf_power_norm, lf_power_norm, hf_power_norm, lf_hf_ratio = 0, 0, 0, 0
+        lf_power_norm, hf_power_norm, lf_hf_ratio = 0, 0, 0
     
-    return vlf_power_norm, lf_power_norm, hf_power_norm, lf_hf_ratio
+    # return vlf_power_norm, lf_power_norm, hf_power_norm, lf_hf_ratio
+    return lf_power_norm, hf_power_norm, lf_hf_ratio
 
 
 def extract_wavelet_features(ppg_segment, wavelet='db4', level=5):
@@ -102,14 +104,15 @@ def extract_spectral_features(ppg_segment):
     spectral_entropy = extract_spectral_entropy(ppg_segment)
     
     # Extract Frequency Band features
-    vlf, lf, hf, lf_hf_ratio = extract_frequency_bands(ppg_segment)
+    # vlf, lf, hf, lf_hf_ratio = extract_frequency_bands(ppg_segment)
+    lf, hf, lf_hf_ratio = extract_frequency_bands(ppg_segment)
     
     # Extract Wavelet features
     MAVcA, AEcA, STDcA, d1_energy, d2_energy, d3_energy = extract_wavelet_features(ppg_segment)
     
     # Combine features
     features = np.array([
-        spectral_entropy, vlf, lf, hf, lf_hf_ratio,
+        spectral_entropy, lf, hf, lf_hf_ratio,
         MAVcA, AEcA, STDcA, d1_energy, d2_energy, d3_energy
     ]).reshape(1, -1)
     
@@ -167,7 +170,7 @@ def load_spectral_model(model_path, scaler_path=None, indices_path=None):
 # Feature names for reference
 FEATURE_NAMES = [
     'SpEn',           # Spectral Entropy
-    'VLF_Power',      # Very Low Frequency normalized power
+    #'VLF_Power',      # Very Low Frequency normalized power
     'LF_Power',       # Low Frequency normalized power
     'HF_Power',       # High Frequency normalized power
     'LF_HF_Ratio',    # LF/HF power ratio

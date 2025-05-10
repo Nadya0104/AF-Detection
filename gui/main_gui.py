@@ -6,13 +6,11 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-import torch
-import joblib
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog, QPushButton, 
                             QVBoxLayout, QHBoxLayout, QLabel, QWidget, QScrollArea, 
-                            QSplitter, QFrame, QProgressBar, QMessageBox, QComboBox)
+                            QFrame, QProgressBar, QMessageBox, QComboBox)
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QColor, QPalette
+from PyQt5.QtGui import QFont
 
 from models.transformer import load_transformer_model
 from models.spectral import load_spectral_model

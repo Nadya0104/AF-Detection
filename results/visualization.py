@@ -11,31 +11,31 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 
 
-def plot_training_history(history, save_dir):
-    """Plot training history"""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+# def plot_training_history(history, save_dir):
+#     """Plot training history"""
+#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
     
-    # Plot loss
-    ax1.plot(history['train_loss'], label='Train Loss')
-    ax1.plot(history['val_loss'], label='Validation Loss')
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    ax1.set_title('Training and Validation Loss')
-    ax1.legend()
-    ax1.grid(True)
+#     # Plot loss
+#     ax1.plot(history['train_loss'], label='Train Loss')
+#     ax1.plot(history['val_loss'], label='Validation Loss')
+#     ax1.set_xlabel('Epoch')
+#     ax1.set_ylabel('Loss')
+#     ax1.set_title('Training and Validation Loss')
+#     ax1.legend()
+#     ax1.grid(True)
     
-    # Plot metrics
-    ax2.plot(history['val_accuracy'], label='Accuracy')
-    ax2.plot(history['val_f1'], label='F1 Score')
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Score')
-    ax2.set_title('Validation Metrics')
-    ax2.legend()
-    ax2.grid(True)
+#     # Plot metrics
+#     ax2.plot(history['val_accuracy'], label='Accuracy')
+#     ax2.plot(history['val_f1'], label='F1 Score')
+#     ax2.set_xlabel('Epoch')
+#     ax2.set_ylabel('Score')
+#     ax2.set_title('Validation Metrics')
+#     ax2.legend()
+#     ax2.grid(True)
     
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'training_history.png'))
-    plt.close()
+#     plt.tight_layout()
+#     plt.savefig(os.path.join(save_dir, 'training_history.png'))
+#     plt.close()
 
 
 def plot_confusion_matrix(y_true, y_pred, save_path, class_names=['Normal', 'AF']):
@@ -126,16 +126,16 @@ def plot_spectral_feature_importance(feature_names, importances, save_path):
     plt.close()
 
 
-def plot_segment_length_distribution(segment_lengths, save_path):
-    """Plot distribution of segment lengths"""
-    plt.figure(figsize=(10, 6))
-    plt.hist(segment_lengths, bins=20)
-    plt.title('Distribution of Segment Lengths')
-    plt.xlabel('Length (samples)')
-    plt.ylabel('Count')
-    plt.tight_layout()
-    plt.savefig(save_path)
-    plt.close()
+# def plot_segment_length_distribution(segment_lengths, save_path):
+#     """Plot distribution of segment lengths"""
+#     plt.figure(figsize=(10, 6))
+#     plt.hist(segment_lengths, bins=20)
+#     plt.title('Distribution of Segment Lengths')
+#     plt.xlabel('Length (samples)')
+#     plt.ylabel('Count')
+#     plt.tight_layout()
+#     plt.savefig(save_path)
+#     plt.close()
 
 
 def plot_rfecv_results(n_features_selected, cv_scores, save_path):

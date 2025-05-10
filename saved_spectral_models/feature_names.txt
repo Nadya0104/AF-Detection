@@ -1,5 +1,4 @@
 SpEn
-VLF_Power
 LF_Power
 HF_Power
 LF_HF_Ratio

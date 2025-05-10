@@ -7,8 +7,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from torch.utils.data import Dataset
-from scipy.signal import resample
 from utils.data_processing import PPGInferenceDataset
 
 

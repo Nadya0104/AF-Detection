@@ -7,10 +7,7 @@ from .data_processing import (
     resample_signal,
     normalize_signal,
     create_sliding_windows,
-    augment_signal,
-    BasePPGDataset,
-    PPGInferenceDataset,
-    PPGTrainingDataset
+    PPGInferenceDataset
 )
 
 __all__ = [
@@ -18,8 +15,5 @@ __all__ = [
     'resample_signal',
     'normalize_signal',
     'create_sliding_windows',
-    'augment_signal',
-    'BasePPGDataset',
-    'PPGInferenceDataset',
-    'PPGTrainingDataset'
+    'PPGInferenceDataset'
 ]

@@ -2,10 +2,9 @@
     "dataset_path": "Dataset",
     "min_fragment_size": 375,
     "target_fragment_size": 1250,
-    "n_features": 11,
+    "n_features": 10,
     "feature_names": [
         "SpEn",
-        "VLF_Power",
         "LF_Power",
         "HF_Power",
         "LF_HF_Ratio",
@@ -15,5 +14,7 @@
         "Detail1_Energy",
         "Detail2_Energy",
         "Detail3_Energy"
-    ]
+    ],
+    "n_patients": 18,
+    "n_segments": 3977
 }

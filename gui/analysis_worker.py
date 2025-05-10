@@ -2,11 +2,9 @@
 Worker thread for PPG signal analysis
 """
 
-import numpy as np
 from PyQt5.QtCore import QThread, pyqtSignal
-from utils.data_processing import normalize_signal
 from models.transformer import predict_transformer
-from models.spectral import extract_spectral_features, predict_spectral
+from models.spectral import  predict_spectral
 
 
 class AnalysisWorker(QThread):
