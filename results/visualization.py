@@ -202,3 +202,155 @@ def create_results_report(results_dir, model_type):
                     f.write("See best_metrics.json for final performance metrics\n")
         except FileNotFoundError:
             f.write("Training history file not found.\n\n")
+
+def plot_feature_selection_scores(scores, feature_counts=None, save_path=None, title="Feature Selection Scores"):
+    """
+    Plot feature selection scores
+    
+    Parameters:
+    -----------
+    scores : list or numpy array
+        Scores at each step
+    feature_counts : list or numpy array, optional
+        Number of features at each step. If None, assumes sequential integers.
+    save_path : str, optional
+        Path to save plot. If None, displays the plot instead.
+    title : str
+        Title for the plot
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    # If feature_counts is not provided, create sequential integers
+    if feature_counts is None:
+        feature_counts = range(1, len(scores) + 1)
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(feature_counts, scores, 'o-', markersize=8, linewidth=2)
+    plt.xlabel('Number of Features')
+    plt.ylabel('Cross-Validation Score')
+    plt.title(title)
+    plt.grid(True)
+    
+    # Highlight the optimal number of features
+    best_idx = np.argmax(scores)
+    plt.axvline(x=feature_counts[best_idx], color='r', linestyle='--')
+    plt.text(feature_counts[best_idx] + 0.1, scores[best_idx], 
+             f'Optimal: {feature_counts[best_idx]} features', 
+             va='center')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
+def plot_feature_importance_from_selection(selected_indices, feature_names, save_path):
+    """
+    Plot feature importance based on selection order
+    
+    Parameters:
+    -----------
+    selected_indices : list
+        Indices of selected features in order of importance
+    feature_names : list
+        Names of all features
+    save_path : str
+        Path to save plot
+    """
+    selected_names = [feature_names[i] for i in selected_indices]
+    # Reverse order for importance (first selected = most important)
+    importance = [(len(selected_indices) - i) for i in range(len(selected_indices))]
+    
+    # Sort by importance (ascending)
+    sorted_idx = np.argsort(importance)
+    names = [selected_names[i] for i in sorted_idx]
+    importance_values = [importance[i] for i in sorted_idx]
+    
+    plt.figure(figsize=(10, 6))
+    bars = plt.barh(range(len(names)), importance_values, align='center')
+    plt.yticks(range(len(names)), names)
+    plt.xlabel('Relative Importance')
+    plt.title('Feature Importance Based on Selection Order')
+    
+    # Add value labels to the bars
+    for i, v in enumerate(importance_values):
+        plt.text(v + 0.1, i, str(v), va='center')
+    
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+
+def save_selected_features_list(selected_indices, feature_names, save_path):
+    """
+    Save list of selected features to text file
+    
+    Parameters:
+    -----------
+    selected_indices : list
+        Indices of selected features in order of importance
+    feature_names : list
+        Names of all features
+    save_path : str
+        Path to save text file
+    """
+    with open(save_path, 'w') as f:
+        f.write("Selected Features for AF Detection\n")
+        f.write("=================================\n\n")
+        f.write("Features in order of selection (most important first):\n\n")
+        
+        for i, idx in enumerate(selected_indices):
+            f.write(f"{i+1}. {feature_names[idx]}\n")
+        
+        f.write("\nFeature selection helps reduce overfitting and improves model generalization.\n")
+        f.write("The order of selection indicates the relative importance of each feature for AF detection.")
+
+
+def plot_feature_importances_from_model(model, feature_names, selected_indices=None, save_path=None):
+    """
+    Plot feature importances from a trained model
+    
+    Parameters:
+    -----------
+    model : estimator
+        Trained model with feature_importances_ attribute
+    feature_names : list
+        Names of all features
+    selected_indices : list or None
+        Indices of selected features (if None, use all features)
+    save_path : str or None
+        Path to save plot (None means display only)
+    """
+    if not hasattr(model, 'feature_importances_'):
+        print("Model does not have feature_importances_ attribute")
+        return
+    
+    importances = model.feature_importances_
+    
+    if selected_indices is not None:
+        # Only show importances for selected features
+        names = [feature_names[i] for i in selected_indices]
+        importances = importances[selected_indices]
+    else:
+        names = feature_names
+    
+    # Sort features by importance
+    indices = np.argsort(importances)[::-1]
+    sorted_names = [names[i] for i in indices]
+    sorted_importances = importances[indices]
+    
+    plt.figure(figsize=(10, 6))
+    plt.title('Feature Importances from Model')
+    plt.barh(range(len(sorted_names)), sorted_importances, align='center')
+    plt.yticks(range(len(sorted_names)), sorted_names)
+    plt.xlabel('Relative Importance')
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()

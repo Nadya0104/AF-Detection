@@ -6,20 +6,17 @@ Model Configuration:
 dataset_path: Dataset
 min_fragment_size: 375
 target_fragment_size: 1250
-n_features: 10
-feature_names: ['SpEn', 'LF_Power', 'HF_Power', 'LF_HF_Ratio', 'MAVcA', 'AEcA', 'STDcA', 'Detail1_Energy', 'Detail2_Energy', 'Detail3_Energy']
-n_patients: 18
-n_segments: 3977
+n_features: 14
+feature_names: ['SpEn', 'LF_Power', 'HF_Power', 'LF_HF_Ratio', 'MAVcA', 'AEcA', 'STDcA', 'Detail1_Energy', 'Detail2_Energy', 'Detail3_Energy', 'VFCDM_Power_Ratio', 'VFCDM_Frequency_Ratio', 'VFCDM_Centroid', 'VFCDM_Flatness']
+test_ratio: 0.2
+n_train_patients: 16
+n_test_patients: 3
+n_train_segments: 3494
+n_test_segments: 723
+n_folds: 5
+random_state: 42
 
-Best Performance Metrics:
---------------------
-accuracy: 0.5323
-precision: 0.5168
-recall: 0.9938
-f1: 0.6800
-auc: 0.6350
+Metrics file not found.
 
-Training Summary:
---------------------
-Note: Traditional ML model - no epoch-based training history available
-See best_metrics.json for final performance metrics
+Training history file not found.
+

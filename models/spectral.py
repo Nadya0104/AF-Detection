@@ -1,12 +1,18 @@
 """
-Spectral analysis models and feature extraction for AF detection
+SpecGroupKFoldral analysis models and feature extraction for AF detection
 """
 
 import numpy as np
 from scipy.fft import fft, fftfreq
+import scipy.signal as signal
 import pywt
 import joblib
 import os
+from sklearn.model_selection import GroupKFold
+from sklearn.metrics import roc_auc_score, accuracy_score
+from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
+
 
 
 def extract_spectral_entropy(ppg_segment):
@@ -96,6 +102,69 @@ def extract_wavelet_features(ppg_segment, wavelet='db4', level=5):
     except Exception as e:
         print(f"Warning: Error in wavelet decomposition: {e}")
         return 0, 0, 0, 0, 0, 0
+    
+def extract_vfcdm_features(ppg_segment, fs=125):
+    """
+    Extract Variable Frequency Complex Demodulation (VFCDM) features
+    
+    Parameters:
+    -----------
+    ppg_segment : numpy array
+        Input PPG signal
+    fs : int
+        Sampling frequency (Hz)
+        
+    Returns:
+    --------
+    numpy array
+        VFCDM features (4 features)
+    """
+    try:
+        # Preprocess - detrend and normalize
+        ppg_detrended = signal.detrend(ppg_segment)
+        ppg_normalized = (ppg_detrended - np.mean(ppg_detrended)) / (np.std(ppg_detrended) if np.std(ppg_detrended) > 0 else 1)
+        
+        # Use Welch's method to estimate power spectral density
+        # This is a simplified approach compared to full VFCDM
+        f, Pxx = signal.welch(ppg_normalized, fs=fs, nperseg=min(256, len(ppg_normalized)), scaling='spectrum')
+        
+        # Define frequency bands for cardiac and respiratory components
+        respiratory_band = (0.15, 0.4)  # Respiratory frequency band (Hz)
+        cardiac_band = (0.75, 2.5)      # Cardiac frequency band (Hz)
+        
+        # Extract PSD features
+        resp_indices = np.logical_and(f >= respiratory_band[0], f <= respiratory_band[1])
+        resp_power = np.sum(Pxx[resp_indices])
+        resp_peak_freq = f[resp_indices][np.argmax(Pxx[resp_indices])] if np.any(resp_indices) else 0
+        
+        cardiac_indices = np.logical_and(f >= cardiac_band[0], f <= cardiac_band[1])
+        cardiac_power = np.sum(Pxx[cardiac_indices])
+        cardiac_peak_freq = f[cardiac_indices][np.argmax(Pxx[cardiac_indices])] if np.any(cardiac_indices) else 0
+        
+        # Calculate derived features
+        power_ratio = resp_power / cardiac_power if cardiac_power > 0 else 0
+        frequency_ratio = resp_peak_freq / cardiac_peak_freq if cardiac_peak_freq > 0 else 0
+        
+        # Additional features from spectral moments
+        # Calculate spectral centroid (weighted average frequency)
+        if np.sum(Pxx) > 0:
+            centroid = np.sum(f * Pxx) / np.sum(Pxx)
+        else:
+            centroid = 0
+            
+        # Spectral flatness (geometric mean / arithmetic mean)
+        eps = 1e-10  # Avoid log(0) and division by zero
+        if np.all(Pxx > 0) and np.sum(Pxx) > 0:
+            flatness = np.exp(np.mean(np.log(Pxx + eps))) / (np.mean(Pxx) + eps)
+        else:
+            flatness = 0
+        
+        # Return all VFCDM features
+        return np.array([power_ratio, frequency_ratio, centroid, flatness])
+        
+    except Exception as e:
+        print(f"Warning: Error in VFCDM feature extraction: {e}")
+        return np.zeros(4)  # Return zeros if there's an error
 
 
 def extract_spectral_features(ppg_segment):
@@ -104,20 +173,102 @@ def extract_spectral_features(ppg_segment):
     spectral_entropy = extract_spectral_entropy(ppg_segment)
     
     # Extract Frequency Band features
-    # vlf, lf, hf, lf_hf_ratio = extract_frequency_bands(ppg_segment)
     lf, hf, lf_hf_ratio = extract_frequency_bands(ppg_segment)
     
     # Extract Wavelet features
     MAVcA, AEcA, STDcA, d1_energy, d2_energy, d3_energy = extract_wavelet_features(ppg_segment)
     
-    # Combine features
+    # Extract VFCDM features
+    vfcdm_features = extract_vfcdm_features(ppg_segment)
+    
+    # Combine all features
     features = np.array([
         spectral_entropy, lf, hf, lf_hf_ratio,
-        MAVcA, AEcA, STDcA, d1_energy, d2_energy, d3_energy
+        MAVcA, AEcA, STDcA, d1_energy, d2_energy, d3_energy,
+        *vfcdm_features  # Unpack VFCDM features
     ]).reshape(1, -1)
     
     return features
 
+def rfe_feature_selection(X, y, patient_ids, model, min_features=1, max_features=None, step=1, verbose=True):
+    """
+    Perform Recursive Feature Elimination with Cross-Validation
+    
+    Parameters:
+    -----------
+    X : numpy array
+        Feature matrix
+    y : numpy array
+        Target labels
+    patient_ids : list or numpy array
+        Patient IDs for each sample
+    model : estimator
+        Model to use for selection
+    min_features : int
+        Minimum number of features to select
+    max_features : int or None
+        Maximum number of features to select (None means X.shape[1])
+    step : int
+        Number of features to remove at each iteration
+    verbose : bool
+        Whether to print progress
+    
+    Returns:
+    --------
+    tuple
+        (selected_indices, cv_scores)
+    """
+    from sklearn.feature_selection import RFE, RFECV
+    from sklearn.model_selection import GroupKFold
+    import numpy as np
+    
+    if max_features is None:
+        max_features = X.shape[1]
+    else:
+        max_features = min(max_features, X.shape[1])
+    
+    # Set up patient-based cross-validation
+    cv = GroupKFold(n_splits=5)
+    
+    if verbose:
+        print("Performing Recursive Feature Elimination with Cross-Validation...")
+        print(f"Initial feature set size: {X.shape[1]}")
+    
+    # Create RFECV selector
+    selector = RFECV(
+        estimator=model,
+        step=step,
+        cv=list(cv.split(X, y, groups=patient_ids)),  # Pre-defined patient-based splits
+        scoring='roc_auc' if hasattr(model, 'predict_proba') else 'accuracy',
+        min_features_to_select=min_features,
+        n_jobs=-1,  # Use all available cores
+        verbose=1 if verbose else 0
+    )
+    
+    # Fit the selector
+    selector.fit(X, y)
+    
+    # Get selected features
+    selected_indices = np.where(selector.support_)[0]
+    
+    # Limit to max_features if needed
+    if len(selected_indices) > max_features:
+        # Use the ranking to select the top max_features
+        feature_ranks = selector.ranking_
+        top_indices = np.argsort(feature_ranks)[:max_features]
+        selected_indices = np.sort(top_indices)  # Keep in original order
+    
+    # Get CV scores
+    cv_scores = selector.cv_results_['mean_test_score']
+    
+    if verbose:
+        print(f"Optimal number of features: {len(selected_indices)}")
+        print(f"Selected features: {[FEATURE_NAMES[i] for i in selected_indices]}")
+        # Use cv_results_ instead of grid_scores_
+        best_score = np.max(cv_scores)
+        print(f"Best CV score: {best_score:.4f}")
+    
+    return selected_indices, cv_scores
 
 def predict_spectral(ppg_segment, model, scaler=None, selected_indices=None):
     """Get prediction from spectral analysis model"""
@@ -170,7 +321,6 @@ def load_spectral_model(model_path, scaler_path=None, indices_path=None):
 # Feature names for reference
 FEATURE_NAMES = [
     'SpEn',           # Spectral Entropy
-    #'VLF_Power',      # Very Low Frequency normalized power
     'LF_Power',       # Low Frequency normalized power
     'HF_Power',       # High Frequency normalized power
     'LF_HF_Ratio',    # LF/HF power ratio
@@ -179,5 +329,9 @@ FEATURE_NAMES = [
     'STDcA',          # Standard Deviation of approx. wavelet coeffs
     'Detail1_Energy', # Energy in detail coefficients level 1
     'Detail2_Energy', # Energy in detail coefficients level 2
-    'Detail3_Energy'  # Energy in detail coefficients level 3
+    'Detail3_Energy', # Energy in detail coefficients level 3
+    'VFCDM_Power_Ratio',      # Respiratory to cardiac power ratio
+    'VFCDM_Frequency_Ratio',  # Respiratory to cardiac frequency ratio
+    'VFCDM_Centroid',         # Spectral centroid
+    'VFCDM_Flatness'          # Spectral flatness
 ]

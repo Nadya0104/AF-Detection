@@ -1,0 +1,20 @@
+Selected Features for AF Detection
+=================================
+
+Features in order of selection (most important first):
+
+1. SpEn
+2. LF_Power
+3. HF_Power
+4. LF_HF_Ratio
+5. MAVcA
+6. AEcA
+7. STDcA
+8. Detail1_Energy
+9. Detail2_Energy
+10. Detail3_Energy
+11. VFCDM_Centroid
+12. VFCDM_Flatness
+
+Feature selection helps reduce overfitting and improves model generalization.
+The order of selection indicates the relative importance of each feature for AF detection.
