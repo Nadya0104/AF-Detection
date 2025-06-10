@@ -35,9 +35,9 @@ def load_models():
     try:
         transformer_model = load_transformer_model("saved_transformer_model/transformer_model.pth", 'cpu')
         spectral_model, scaler, selected_indices = load_spectral_model(
-            "saved_spectral_models/best_model.pkl",
-            "saved_spectral_models/scaler.pkl", 
-            "saved_spectral_models/selected_indices.pkl"
+            "saved_spectral_model/best_model.pkl",
+            "saved_spectral_model/scaler.pkl", 
+            "saved_spectral_model/selected_indices.pkl"
         )
         return "Models loaded successfully"
     except Exception as e:

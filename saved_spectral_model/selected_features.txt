@@ -13,8 +13,6 @@ Features in order of selection (most important first):
 8. Detail1_Energy
 9. Detail2_Energy
 10. Detail3_Energy
-11. VFCDM_Centroid
-12. VFCDM_Flatness
 
 Feature selection helps reduce overfitting and improves model generalization.
 The order of selection indicates the relative importance of each feature for AF detection.

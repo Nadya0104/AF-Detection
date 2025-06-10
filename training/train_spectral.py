@@ -13,7 +13,7 @@ import joblib
 import itertools
 
 
-from utils.data_processing import load_and_segment_data, create_train_val_splits_with_cv
+from utils.data_processing import load_and_segment_data, create_train_splits_with_cv
 from models.spectral import extract_spectral_features, rfe_feature_selection,  FEATURE_NAMES
 from results.model_results import ModelResults
 from results.visualization import (
@@ -39,9 +39,10 @@ def extract_features_from_segments(segments):
     return np.array(features)
 
 
-def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_ratio=0.2, n_folds=5, random_seed=42):
+def train_spectral_model(dataset_path, save_dir='saved_spectral_model', 
+                        val_ratio=0.2, test_ratio=0.2, n_folds=5, random_seed=42):
     """
-    Train spectral analysis model for AF detection using patient-based train/test split
+    Train spectral analysis model with proper train/validation/test splits
     
     Parameters:
     -----------
@@ -49,10 +50,12 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
         Path to dataset folder
     save_dir : str
         Directory to save results
+    val_ratio : float
+        Ratio of patients for validation set
     test_ratio : float
-        Ratio of patients to reserve for testing (e.g., 0.2 = 20%)
+        Ratio of patients for test set
     n_folds : int
-        Number of folds for cross-validation
+        Number of folds for cross-validation on training set
     random_seed : int
         Random seed for reproducibility
     
@@ -64,60 +67,42 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
     # Initialize results tracker
     results = ModelResults('spectral', save_dir)
     
-    # Create needed directories
+    # Create directories
     os.makedirs(save_dir, exist_ok=True)
     viz_dir = os.path.join(save_dir, 'visualizations')
     os.makedirs(viz_dir, exist_ok=True)
 
-    print("Loading and segmenting data...")
-    # Load data with patient-based splitting
-    (train_val_segments, train_val_labels, train_val_patient_ids, train_val_filenames,
-     test_segments, test_labels, test_patient_ids, test_filenames) = load_and_segment_data(
-        dataset_path, test_ratio=test_ratio, random_seed=random_seed
+    print("Loading and segmenting data with proper splits...")
+    
+    # Load data with proper three-way split
+    train_data, val_data, test_data = load_and_segment_data(
+        dataset_path, val_ratio=val_ratio, test_ratio=test_ratio, random_seed=random_seed
     )
     
-    # Extract features for training segments
-    print("Extracting features for training segments...")
-    X_train_val_features = []
-    y_train_val = np.array(train_val_labels)
-    valid_train_indices = []
+    # Extract training data
+    train_segments, train_labels, train_patient_ids, train_filenames = train_data
+    val_segments, val_labels, val_patient_ids, val_filenames = val_data
+    test_segments, test_labels, test_patient_ids, test_filenames = test_data
     
-    for i, segment in enumerate(train_val_segments):
-        try:
-            features = extract_spectral_features(segment)
-            X_train_val_features.append(features[0])
-            valid_train_indices.append(i)
-        except Exception as e:
-            print(f"Error extracting features for training segment {i}: {e}")
+    # Extract features for all sets
+    print("Extracting features for all data splits...")
     
-    X_train_val_features = np.array(X_train_val_features)
+    # Training set features
+    X_train = extract_features_from_segments(train_segments)
+    y_train = np.array(train_labels)
     
-    # Update labels and patient IDs to match valid features
-    y_train_val = y_train_val[valid_train_indices]
-    train_val_patient_ids = [train_val_patient_ids[i] for i in valid_train_indices]
+    # Validation set features  
+    X_val = extract_features_from_segments(val_segments)
+    y_val = np.array(val_labels)
     
-    # Extract features for test segments
-    print("Extracting features for test segments...")
-    X_test_features = []
+    # Test set features
+    X_test = extract_features_from_segments(test_segments)
     y_test = np.array(test_labels)
-    valid_test_indices = []
     
-    for i, segment in enumerate(test_segments):
-        try:
-            features = extract_spectral_features(segment)
-            X_test_features.append(features[0])
-            valid_test_indices.append(i)
-        except Exception as e:
-            print(f"Error extracting features for test segment {i}: {e}")
-    
-    X_test_features = np.array(X_test_features)
-    
-    # Update test labels to match valid features
-    y_test = y_test[valid_test_indices]
-    test_patient_ids = [test_patient_ids[i] for i in valid_test_indices]
-    
-    print(f"Training features shape: {X_train_val_features.shape}")
-    print(f"Test features shape: {X_test_features.shape}")
+    print(f"Feature extraction complete:")
+    print(f"  Training: {X_train.shape}")
+    print(f"  Validation: {X_val.shape}")
+    print(f"  Test: {X_test.shape}")
     
     # Save configuration
     results.save_config({
@@ -126,31 +111,31 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
         'target_fragment_size': 1250,
         'n_features': len(FEATURE_NAMES),
         'feature_names': FEATURE_NAMES,
+        'val_ratio': val_ratio,
         'test_ratio': test_ratio,
-        'n_train_patients': len(set(train_val_patient_ids)),
+        'n_train_patients': len(set(train_patient_ids)),
+        'n_val_patients': len(set(val_patient_ids)),
         'n_test_patients': len(set(test_patient_ids)),
-        'n_train_segments': len(X_train_val_features),
-        'n_test_segments': len(X_test_features),
+        'n_train_segments': len(X_train),
+        'n_val_segments': len(X_val),
+        'n_test_segments': len(X_test),
         'n_folds': n_folds,
         'random_state': random_seed
     })
     
-    # Visualize features
+    # Create visualizations using training data
     print("Creating feature visualizations...")
-    plot_feature_distributions(X_train_val_features, y_train_val, FEATURE_NAMES, viz_dir)
-    plot_feature_correlations(X_train_val_features, FEATURE_NAMES,
+    plot_feature_distributions(X_train, y_train, FEATURE_NAMES, viz_dir)
+    plot_feature_correlations(X_train, FEATURE_NAMES,
                             os.path.join(viz_dir, 'feature_correlations.png'))
     
-    # Create patient-based CV folds
-    print("Creating patient-based cross-validation folds...")
-    cv_folds = create_train_val_splits_with_cv(
-        [train_val_segments[i] for i in valid_train_indices],
-        y_train_val, 
-        train_val_patient_ids,
-        n_folds=n_folds
+    # Create CV folds from training data only
+    print("Creating cross-validation folds from training data...")
+    cv_folds = create_train_splits_with_cv(
+        train_segments, y_train, train_patient_ids, n_folds=n_folds
     )
     
-    # Define models
+    # Define models and parameter grids (same as before)
     models = {
         'Random Forest': RandomForestClassifier(
             class_weight='balanced', 
@@ -162,13 +147,12 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
             random_state=random_seed
         ),
         'XGBoost': XGBClassifier(
-            scale_pos_weight=len(y_train_val) / sum(y_train_val),  # Handle class imbalance
+            scale_pos_weight=len(y_train) / sum(y_train),
             random_state=random_seed, 
             eval_metric='logloss'
         )
     }
     
-    # Define parameter grids
     param_grids = {
         'Random Forest': {
             'n_estimators': [50, 100, 200],
@@ -187,22 +171,13 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
         }
     }
     
-    # CV training results
-    cv_results = {}
-    for model_name in models.keys():
-        cv_results[model_name] = {
-            'params': [],
-            'scores': []
-        }
-    
-    # Train and evaluate models with CV
+    # Hyperparameter tuning using CV on training set + validation set for final selection
+    print("\nStarting hyperparameter tuning with cross-validation...")
     best_model_configs = {}
     
-    print("\nStarting Cross-Validation Training...")
     for model_name, model in models.items():
         print(f"\n=== Training {model_name} ===")
         
-        # Track best parameters and score
         best_params = None
         best_cv_score = -1
         
@@ -211,83 +186,107 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
             print(f"Parameters: {params}")
             model.set_params(**params)
             
-            # Perform cross-validation
+            # Perform cross-validation on training set
             fold_scores = []
-            for fold, (train_idx, val_idx) in enumerate(cv_folds):
-                # Split data for this fold
-                X_train, X_val = X_train_val_features[train_idx], X_train_val_features[val_idx]
-                y_train, y_val = y_train_val[train_idx], y_train_val[val_idx]
+            for fold, (train_idx, cv_val_idx) in enumerate(cv_folds):
+                # Split training data for this fold
+                X_fold_train, X_fold_val = X_train[train_idx], X_train[cv_val_idx]
+                y_fold_train, y_fold_val = y_train[train_idx], y_train[cv_val_idx]
                 
                 # Scale features
                 scaler = StandardScaler()
-                X_train_scaled = scaler.fit_transform(X_train)
-                X_val_scaled = scaler.transform(X_val)
+                X_fold_train_scaled = scaler.fit_transform(X_fold_train)
+                X_fold_val_scaled = scaler.transform(X_fold_val)
                 
                 # Train model
-                model.fit(X_train_scaled, y_train)
+                model.fit(X_fold_train_scaled, y_fold_train)
                 
                 # Evaluate
                 if hasattr(model, 'predict_proba'):
-                    y_val_prob = model.predict_proba(X_val_scaled)[:, 1]
-                    score = roc_auc_score(y_val, y_val_prob)
+                    y_fold_val_prob = model.predict_proba(X_fold_val_scaled)[:, 1]
+                    score = roc_auc_score(y_fold_val, y_fold_val_prob)
                 else:
-                    y_val_pred = model.predict(X_val_scaled)
-                    score = accuracy_score(y_val, y_val_pred)
+                    y_fold_val_pred = model.predict(X_fold_val_scaled)
+                    score = accuracy_score(y_fold_val, y_fold_val_pred)
                 
                 fold_scores.append(score)
                 print(f"  Fold {fold+1}/{n_folds}: {score:.4f}")
             
-            # Average score across folds
-            avg_score = np.mean(fold_scores)
-            print(f"  Average CV Score: {avg_score:.4f}")
-            
-            # Save results
-            cv_results[model_name]['params'].append(params)
-            cv_results[model_name]['scores'].append(avg_score)
+            # Average CV score
+            avg_cv_score = np.mean(fold_scores)
+            print(f"  Average CV Score: {avg_cv_score:.4f}")
             
             # Update best parameters
-            if avg_score > best_cv_score:
-                best_cv_score = avg_score
+            if avg_cv_score > best_cv_score:
+                best_cv_score = avg_cv_score
                 best_params = params
+        
+        # Train best model on full training set and evaluate on validation set
+        print(f"Training best {model_name} on full training set...")
+        model.set_params(**best_params)
+        
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        model.fit(X_train_scaled, y_train)
+        
+        # Evaluate on validation set
+        X_val_scaled = scaler.transform(X_val)
+        if hasattr(model, 'predict_proba'):
+            val_prob = model.predict_proba(X_val_scaled)[:, 1]
+            val_score = roc_auc_score(y_val, val_prob)
+        else:
+            val_pred = model.predict(X_val_scaled)
+            val_score = accuracy_score(y_val, val_pred)
+        
+        print(f"Best {model_name} validation score: {val_score:.4f}")
         
         # Save best configuration
         best_model_configs[model_name] = {
             'params': best_params,
-            'score': best_cv_score
+            'cv_score': best_cv_score,
+            'val_score': val_score,
+            'model': model,
+            'scaler': scaler
         }
-        
-        print(f"Best parameters for {model_name}: {best_params}")
-        print(f"Best CV score: {best_cv_score:.4f}")
     
-    # Find overall best model
-    best_model_name = max(best_model_configs, key=lambda k: best_model_configs[k]['score'])
-    best_params = best_model_configs[best_model_name]['params']
-    best_cv_score = best_model_configs[best_model_name]['score']
+    # Select best model based on validation performance
+    best_model_name = max(best_model_configs, key=lambda k: best_model_configs[k]['val_score'])
+    best_config = best_model_configs[best_model_name]
     
-    print(f"\nBest model overall: {best_model_name}")
-    print(f"Best parameters: {best_params}")
-    print(f"Best CV score: {best_cv_score:.4f}")
+    print(f"\nBest model: {best_model_name}")
+    print(f"Best CV score: {best_config['cv_score']:.4f}")
+    print(f"Best validation score: {best_config['val_score']:.4f}")
     
-    # Perform greedy feature selection with the best model
     print("\nPerforming recursive feature elimination with cross-validation...")
-    best_model = models[best_model_name].set_params(**best_params)
-
-    # Use RFE for feature selection
+    
+    # Use the best model for RFE (from the selected best model)
+    rfe_model = models[best_model_name]
+    rfe_model.set_params(**best_config['params'])
+    
+    # Scale features for RFE (use training data only)
+    rfe_scaler = StandardScaler()
+    X_train_scaled_rfe = rfe_scaler.fit_transform(X_train)
+    
+    print(f"Using {best_model_name} for RFE with {n_folds}-fold patient-based cross-validation")
+    
+    # Use RFE for feature selection on training data only
     selected_indices, selection_scores = rfe_feature_selection(
-        X_train_val_features, 
-        y_train_val, 
-        train_val_patient_ids, 
-        best_model,
-        min_features=1,
-        max_features=min(15, X_train_val_features.shape[1]),  # Set a reasonable upper limit
+        X_train_scaled_rfe, 
+        y_train, 
+        train_patient_ids, 
+        rfe_model,
+        min_features=2,
+        max_features=min(10, X_train.shape[1]),  # Set a reasonable upper limit
         step=1,  # Remove one feature at a time
         verbose=True
     )
 
+    print(f"Selected {len(selected_indices)} features: {[FEATURE_NAMES[idx] for idx in selected_indices]}")
+
     # Create visualizations for feature selection
     plot_feature_selection_scores(
         selection_scores, 
-        feature_counts=range(1, len(selection_scores) + 1),
+        feature_counts=range(2, len(selection_scores) + 2),  # Adjust range to match min_features
         save_path=os.path.join(viz_dir, 'feature_selection_scores.png'),
         title="Recursive Feature Elimination CV"
     )
@@ -309,48 +308,72 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
     joblib.dump(selected_indices, os.path.join(save_dir, 'selected_indices.pkl'))
     
     # Use only selected features for final training
-    X_train_val_selected = X_train_val_features[:, selected_indices]
-    X_test_selected = X_test_features[:, selected_indices]
+    X_train_selected = X_train[:, selected_indices]
+    X_val_selected = X_val[:, selected_indices]
+    X_test_selected = X_test[:, selected_indices]
     
     print(f"\nTraining final model with {len(selected_indices)} selected features...")
     
-    # Train final model on all training data
-    scaler = StandardScaler()
-    X_train_val_scaled = scaler.fit_transform(X_train_val_selected)
+    # Train final model on training data with selected features
+    final_scaler = StandardScaler()
+    X_train_selected_scaled = final_scaler.fit_transform(X_train_selected)
     
     final_model = models[best_model_name]
-    final_model.set_params(**best_params)
-    final_model.fit(X_train_val_scaled, y_train_val)
+    final_model.set_params(**best_config['params'])
+    final_model.fit(X_train_selected_scaled, y_train)
     
     # Evaluate on training data
     if hasattr(final_model, 'predict_proba'):
-        y_train_val_prob = final_model.predict_proba(X_train_val_scaled)[:, 1]
-        y_train_val_pred = (y_train_val_prob > 0.5).astype(int)
+        y_train_prob = final_model.predict_proba(X_train_selected_scaled)[:, 1]
+        y_train_pred = (y_train_prob > 0.5).astype(int)
     else:
-        y_train_val_pred = final_model.predict(X_train_val_scaled)
-        y_train_val_prob = y_train_val_pred
+        y_train_pred = final_model.predict(X_train_selected_scaled)
+        y_train_prob = y_train_pred
     
     # Calculate training metrics
     train_metrics = {
-        'accuracy': accuracy_score(y_train_val, y_train_val_pred),
-        'precision': precision_score(y_train_val, y_train_val_pred),
-        'recall': recall_score(y_train_val, y_train_val_pred),
-        'f1': f1_score(y_train_val, y_train_val_pred),
-        'auc': roc_auc_score(y_train_val, y_train_val_prob) if hasattr(final_model, 'predict_proba') else 0.5
+        'accuracy': accuracy_score(y_train, y_train_pred),
+        'precision': precision_score(y_train, y_train_pred),
+        'recall': recall_score(y_train, y_train_pred),
+        'f1': f1_score(y_train, y_train_pred),
+        'auc': roc_auc_score(y_train, y_train_prob) if hasattr(final_model, 'predict_proba') else 0.5
     }
     
     print("\nFinal model performance (training data):")
     for metric, value in train_metrics.items():
         print(f"  {metric}: {value:.4f}")
     
-    # Evaluate on holdout test set
-    X_test_scaled = scaler.transform(X_test_selected)
+    # Evaluate on validation set
+    X_val_selected_scaled = final_scaler.transform(X_val_selected)
     
     if hasattr(final_model, 'predict_proba'):
-        y_test_prob = final_model.predict_proba(X_test_scaled)[:, 1]
+        y_val_prob = final_model.predict_proba(X_val_selected_scaled)[:, 1]
+        y_val_pred = (y_val_prob > 0.5).astype(int)
+    else:
+        y_val_pred = final_model.predict(X_val_selected_scaled)
+        y_val_prob = y_val_pred
+    
+    # Calculate validation metrics
+    val_metrics = {
+        'accuracy': accuracy_score(y_val, y_val_pred),
+        'precision': precision_score(y_val, y_val_pred),
+        'recall': recall_score(y_val, y_val_pred),
+        'f1': f1_score(y_val, y_val_pred),
+        'auc': roc_auc_score(y_val, y_val_prob) if hasattr(final_model, 'predict_proba') else 0.5
+    }
+    
+    print("\nFinal model performance (validation data):")
+    for metric, value in val_metrics.items():
+        print(f"  {metric}: {value:.4f}")
+    
+    # Evaluate on holdout test set
+    X_test_selected_scaled = final_scaler.transform(X_test_selected)
+    
+    if hasattr(final_model, 'predict_proba'):
+        y_test_prob = final_model.predict_proba(X_test_selected_scaled)[:, 1]
         y_test_pred = (y_test_prob > 0.5).astype(int)
     else:
-        y_test_pred = final_model.predict(X_test_scaled)
+        y_test_pred = final_model.predict(X_test_selected_scaled)
         y_test_prob = y_test_pred
     
     # Calculate test metrics
@@ -420,26 +443,29 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
     for metric, value in patient_metrics.items():
         print(f"  {metric}: {value:.4f}")
     
-    # Update results and save
+    # Update results and save (now includes validation metrics)
     results.update_best_metrics({
         'train': train_metrics,
+        'validation': val_metrics,  # Added validation metrics
         'test': test_metrics,
         'patient': patient_metrics
     })
     
     # Save models and additional data
-    joblib.dump(scaler, os.path.join(save_dir, 'scaler.pkl'))
+    joblib.dump(final_scaler, os.path.join(save_dir, 'scaler.pkl'))  # Use final_scaler instead of scaler
     joblib.dump(final_model, os.path.join(save_dir, 'best_model.pkl'))
-    joblib.dump(cv_results, os.path.join(save_dir, 'cv_results.pkl'))
+    joblib.dump(best_model_configs, os.path.join(save_dir, 'cv_results.pkl'))  # Save all model configs, not just cv_results
     
-    # Create visualizations for final model
+    # Create visualizations for final model (now includes validation set)
     print("\nCreating final visualizations...")
     plot_confusion_matrix(y_test, y_test_pred, os.path.join(viz_dir, 'test_confusion_matrix.png'))
-    plot_confusion_matrix(y_train_val, y_train_val_pred, os.path.join(viz_dir, 'train_confusion_matrix.png'))
+    plot_confusion_matrix(y_train, y_train_pred, os.path.join(viz_dir, 'train_confusion_matrix.png'))
+    plot_confusion_matrix(y_val, y_val_pred, os.path.join(viz_dir, 'val_confusion_matrix.png'))  # Added validation confusion matrix
     
     if hasattr(final_model, 'predict_proba'):
         plot_roc_curve(y_test, y_test_prob, os.path.join(viz_dir, 'test_roc_curve.png'))
-        plot_roc_curve(y_train_val, y_train_val_prob, os.path.join(viz_dir, 'train_roc_curve.png'))
+        plot_roc_curve(y_train, y_train_prob, os.path.join(viz_dir, 'train_roc_curve.png'))
+        plot_roc_curve(y_val, y_val_prob, os.path.join(viz_dir, 'val_roc_curve.png'))  # Added validation ROC curve
     
     # If the model provides feature importances, visualize those too
     if hasattr(final_model, 'feature_importances_'):
@@ -462,8 +488,10 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model', test_rat
     create_results_report(save_dir, 'spectral')
     
     print(f"\nModel and results saved to {save_dir}")
+    print(f"Selected {len(selected_indices)} features: {[FEATURE_NAMES[idx] for idx in selected_indices]}")
     
-    return final_model, scaler
+    # Return final model, scaler, and selected indices
+    return final_model, final_scaler, selected_indices
 
 
 def generate_param_combinations(param_grid):
@@ -481,4 +509,4 @@ def generate_param_combinations(param_grid):
 
 if __name__ == '__main__':
     dataset_path = 'Dataset'
-    final_model, scaler = train_spectral_model(dataset_path)
+    final_model, scaler, selected_indices = train_spectral_model(dataset_path)

@@ -1,15 +1,13 @@
 Model's Internal Feature Importances:
 ====================================
 
-SpEn: 0.149607
-Detail2_Energy: 0.149005
-MAVcA: 0.121873
-Detail1_Energy: 0.114341
-VFCDM_Centroid: 0.100102
-VFCDM_Flatness: 0.079908
-HF_Power: 0.078836
-STDcA: 0.060422
-LF_Power: 0.058791
-Detail3_Energy: 0.040055
-AEcA: 0.030694
-LF_HF_Ratio: 0.016367
+SpEn: 0.234529
+Detail1_Energy: 0.173940
+Detail2_Energy: 0.122162
+STDcA: 0.099844
+Detail3_Energy: 0.098217
+AEcA: 0.076720
+MAVcA: 0.071423
+LF_Power: 0.052082
+HF_Power: 0.042578
+LF_HF_Ratio: 0.028506

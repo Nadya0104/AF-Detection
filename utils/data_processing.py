@@ -146,11 +146,14 @@ def create_segments_from_signal(ppg_data, min_fragment_size, target_fragment_siz
 
 
 
-def load_and_segment_data(dataset_path, min_fragment_size=MIN_FRAGMENT_SIZE, 
-                         target_fragment_size=TARGET_FRAGMENT_SIZE, test_ratio=0.2, random_seed=42):
+def load_and_segment_data(dataset_path, 
+                                           min_fragment_size=375,
+                                           target_fragment_size=1250,
+                                           val_ratio=0.2, 
+                                           test_ratio=0.2, 
+                                           random_seed=42):
     """
-    Load all CSV files from the dataset and segment them for spectral analysis
-    with patient ID tracking for proper cross-validation
+    Load data and create proper train/validation/test splits ensuring no patient leakage
     
     Parameters:
     -----------
@@ -160,133 +163,157 @@ def load_and_segment_data(dataset_path, min_fragment_size=MIN_FRAGMENT_SIZE,
         Minimum acceptable fragment size
     target_fragment_size : int
         Target fragment size
-    test_ratio : float
-        Ratio of patients to reserve for testing (e.g., 0.2 = 20%)
+    val_ratio : float
+        Ratio of patients for validation set (0.2 = 20%)
+    test_ratio : float  
+        Ratio of patients for test set (0.2 = 20%)
     random_seed : int
-        Random seed for reproducible splitting
+        Random seed for reproducibility
     
     Returns:
     --------
     tuple
-        (train_segments, train_labels, train_patient_ids, train_filenames,
-         test_segments, test_labels, test_patient_ids, test_filenames)
+        (train_data, val_data, test_data) where each is 
+        (segments, labels, patient_ids, filenames)
     """
     import random
+    from sklearn.model_selection import train_test_split
+    
     random.seed(random_seed)
     
-    # Initialize lists for data collection
-    all_segments = []
-    all_labels = []
-    all_patient_ids = []
-    all_filenames = []
+    # Step 1: Load all data grouped by patients
+    all_patient_data = {}  # patient_id -> {'segments': [], 'labels': [], 'filenames': [], 'condition': 'AF'/'Healthy'}
     
     # Process AF patients
     af_path = os.path.join(dataset_path, "AF_Patients")
     if os.path.exists(af_path):
-        # Get all CSV files in the folder
         af_files = [f for f in os.listdir(af_path) if f.endswith(".csv")]
         
-        # Process each file and track patient IDs
         for filename in af_files:
             patient_id = extract_patient_id(filename)
-            
             file_path = os.path.join(af_path, filename)
+            
             try:
                 data = pd.read_csv(file_path)
                 ppg_data = data['PPG'].values
+                segments = create_segments_from_signal(ppg_data, min_fragment_size, target_fragment_size)
                 
-                # Create segments
-                file_segments = create_segments_from_signal(
-                    ppg_data, min_fragment_size, target_fragment_size
-                )
+                if patient_id not in all_patient_data:
+                    all_patient_data[patient_id] = {
+                        'segments': [], 
+                        'labels': [], 
+                        'filenames': [], 
+                        'condition': 'AF'
+                    }
                 
-                # Add segments and tracking info
-                all_segments.extend(file_segments)
-                all_labels.extend([1] * len(file_segments))  # 1 for AF
-                all_patient_ids.extend([patient_id] * len(file_segments))
-                all_filenames.extend([filename] * len(file_segments))
+                all_patient_data[patient_id]['segments'].extend(segments)
+                all_patient_data[patient_id]['labels'].extend([1] * len(segments))  # AF = 1
+                all_patient_data[patient_id]['filenames'].extend([filename] * len(segments))
                 
-                print(f"Processed AF file: {filename}, Patient ID: {patient_id}, Segments: {len(file_segments)}")
+                print(f"Processed AF file: {filename}, Patient: {patient_id}, Segments: {len(segments)}")
+                
             except Exception as e:
-                print(f"Error processing file {filename}: {e}")
+                print(f"Error processing AF file {filename}: {e}")
     
     # Process Healthy patients
     healthy_path = os.path.join(dataset_path, "Healthy_Patients")
     if os.path.exists(healthy_path):
-        # Get all CSV files in the folder
         healthy_files = [f for f in os.listdir(healthy_path) if f.endswith(".csv")]
         
-        # Process each file and track patient IDs
         for filename in healthy_files:
             patient_id = extract_patient_id(filename)
-            
             file_path = os.path.join(healthy_path, filename)
+            
             try:
                 data = pd.read_csv(file_path)
                 ppg_data = data['PPG'].values
+                segments = create_segments_from_signal(ppg_data, min_fragment_size, target_fragment_size)
                 
-                # Create segments
-                file_segments = create_segments_from_signal(
-                    ppg_data, min_fragment_size, target_fragment_size
-                )
+                if patient_id not in all_patient_data:
+                    all_patient_data[patient_id] = {
+                        'segments': [], 
+                        'labels': [], 
+                        'filenames': [], 
+                        'condition': 'Healthy'
+                    }
                 
-                # Add segments and tracking info
-                all_segments.extend(file_segments)
-                all_labels.extend([0] * len(file_segments))  # 0 for healthy
-                all_patient_ids.extend([patient_id] * len(file_segments))
-                all_filenames.extend([filename] * len(file_segments))
+                all_patient_data[patient_id]['segments'].extend(segments)
+                all_patient_data[patient_id]['labels'].extend([0] * len(segments))  # Healthy = 0
+                all_patient_data[patient_id]['filenames'].extend([filename] * len(segments))
                 
-                print(f"Processed healthy file: {filename}, Patient ID: {patient_id}, Segments: {len(file_segments)}")
+                print(f"Processed Healthy file: {filename}, Patient: {patient_id}, Segments: {len(segments)}")
+                
             except Exception as e:
-                print(f"Error processing file {filename}: {e}")
+                print(f"Error processing Healthy file {filename}: {e}")
     
-    # Create patient-based train/test split
-    unique_patients = list(set(all_patient_ids))
-    print(f"Total unique patients: {len(unique_patients)}")
+    # Step 2: Determine patient-level labels for stratification
+    patients = list(all_patient_data.keys())
+    patient_labels = []
     
-    # Randomly select test patients
-    num_test_patients = max(1, int(len(unique_patients) * test_ratio))
-    test_patients = random.sample(unique_patients, num_test_patients)
-    print(f"Selected {len(test_patients)} patients for testing: {test_patients}")
+    for patient_id in patients:
+        # Patient label based on condition (more robust than majority vote)
+        condition = all_patient_data[patient_id]['condition']
+        patient_label = 1 if condition == 'AF' else 0
+        patient_labels.append(patient_label)
     
-    # Split data based on patient IDs
-    train_segments = []
-    train_labels = []
-    train_patient_ids = []
-    train_filenames = []
+    print(f"\nTotal unique patients: {len(patients)}")
+    af_patients = sum(patient_labels)
+    healthy_patients = len(patients) - af_patients
+    print(f"AF patients: {af_patients}, Healthy patients: {healthy_patients}")
     
-    test_segments = []
-    test_labels = []
-    test_patient_ids = []
-    test_filenames = []
+    # Step 3: Create stratified patient splits (train/val/test)
+    # First split: separate test set
+    train_val_patients, test_patients, train_val_labels, test_labels = train_test_split(
+        patients, patient_labels, 
+        test_size=test_ratio, 
+        random_state=random_seed, 
+        stratify=patient_labels
+    )
     
-    for i, patient_id in enumerate(all_patient_ids):
-        if patient_id in test_patients:
-            test_segments.append(all_segments[i])
-            test_labels.append(all_labels[i])
-            test_patient_ids.append(patient_id)
-            test_filenames.append(all_filenames[i])
-        else:
-            train_segments.append(all_segments[i])
-            train_labels.append(all_labels[i])
-            train_patient_ids.append(patient_id)
-            train_filenames.append(all_filenames[i])
+    # Second split: separate validation from training
+    adjusted_val_ratio = val_ratio / (1 - test_ratio)  # Adjust since we removed test set
+    train_patients, val_patients, _, _ = train_test_split(
+        train_val_patients, train_val_labels,
+        test_size=adjusted_val_ratio,
+        random_state=random_seed,
+        stratify=train_val_labels
+    )
     
-    # Print split information
-    print(f"Train set: {len(train_segments)} segments from {len(set(train_patient_ids))} patients")
-    print(f"Test set: {len(test_segments)} segments from {len(set(test_patient_ids))} patients")
+    print(f"\nPatient split summary:")
+    print(f"  Training: {len(train_patients)} patients ({len(train_patients)/len(patients)*100:.1f}%)")
+    print(f"  Validation: {len(val_patients)} patients ({len(val_patients)/len(patients)*100:.1f}%)")
+    print(f"  Test: {len(test_patients)} patients ({len(test_patients)/len(patients)*100:.1f}%)")
     
-    # Check class distribution
-    train_af = sum(train_labels)
-    train_healthy = len(train_labels) - train_af
-    test_af = sum(test_labels)
-    test_healthy = len(test_labels) - test_af
+    # Step 4: Create segment-level data for each split
+    def create_split_data(patient_list, split_name):
+        segments, labels, patient_ids, filenames = [], [], [], []
+        af_count = 0
+        
+        for patient_id in patient_list:
+            data = all_patient_data[patient_id]
+            segments.extend(data['segments'])
+            labels.extend(data['labels'])
+            patient_ids.extend([patient_id] * len(data['segments']))
+            filenames.extend(data['filenames'])
+            
+            if data['condition'] == 'AF':
+                af_count += 1
+        
+        healthy_count = len(patient_list) - af_count
+        af_segments = sum(labels)
+        healthy_segments = len(labels) - af_segments
+        
+        print(f"{split_name} set:")
+        print(f"  Patients: {af_count} AF, {healthy_count} Healthy")
+        print(f"  Segments: {af_segments} AF ({af_segments/len(labels)*100:.1f}%), {healthy_segments} Healthy")
+        
+        return segments, labels, patient_ids, filenames
     
-    print(f"Train set: {train_af} AF ({train_af/len(train_labels)*100:.1f}%), {train_healthy} healthy")
-    print(f"Test set: {test_af} AF ({test_af/len(test_labels)*100:.1f}%), {test_healthy} healthy")
+    train_data = create_split_data(train_patients, "Training")
+    val_data = create_split_data(val_patients, "Validation")
+    test_data = create_split_data(test_patients, "Test")
     
-    return (train_segments, train_labels, train_patient_ids, train_filenames,
-            test_segments, test_labels, test_patient_ids, test_filenames)
+    return train_data, val_data, test_data
 
 
 def process_folder(folder_path, label, min_fragment_size, target_fragment_size, exclude_last=True):
@@ -400,9 +427,10 @@ def extract_patient_id(filename):
         return filename
 
 
-def create_train_val_splits_with_cv(segments, labels, patient_ids, n_folds=5, random_state=42):
+def create_train_splits_with_cv(segments, labels, patient_ids, n_folds=5, random_state=42):
     """
-    Create train/validation splits for 5-fold cross-validation based on patient IDs
+    Create train splits for 5-fold cross-validation based on patient IDs
+    (Only for training set - validation and test sets are held out)
     
     Parameters:
     -----------
@@ -425,13 +453,11 @@ def create_train_val_splits_with_cv(segments, labels, patient_ids, n_folds=5, ra
     import numpy as np
     from sklearn.model_selection import GroupKFold
     
-    # Convert to numpy arrays for labels and patient_ids
-    # (but keep segments as a list since they can have different lengths)
+    # Convert to numpy arrays
     labels = np.array(labels)
     patient_ids = np.array(patient_ids)
     
-    # Create dummy array for GroupKFold (one row per segment)
-    # GroupKFold doesn't actually use X, just its shape
+    # Create dummy array for GroupKFold
     X_dummy = np.zeros((len(segments), 1))
     
     # Create group k-fold
@@ -448,15 +474,21 @@ def create_train_val_splits_with_cv(segments, labels, patient_ids, n_folds=5, ra
         train_patients = np.unique(patient_ids[train_idx])
         val_patients = np.unique(patient_ids[val_idx])
         
-        print(f"Fold {fold_counter}/{n_folds}: Train on {len(train_idx)} segments from {len(train_patients)} patients, "
-              f"validate on {len(val_idx)} segments from {len(val_patients)} patients")
+        print(f"CV Fold {fold_counter}/{n_folds}:")
+        print(f"  Train: {len(train_idx)} segments from {len(train_patients)} patients")
+        print(f"  Val: {len(val_idx)} segments from {len(val_patients)} patients")
+        
+        # Check for patient leakage
+        overlap = set(train_patients) & set(val_patients)
+        if overlap:
+            print(f"  WARNING: Patient overlap detected: {overlap}")
         
         # Check class distribution
         train_af = np.sum(labels[train_idx] == 1)
         val_af = np.sum(labels[val_idx] == 1)
         
-        print(f"  Train: {train_af} AF segments ({train_af/len(train_idx)*100:.1f}%), "
-              f"Val: {val_af} AF segments ({val_af/len(val_idx)*100:.1f}%)")
+        print(f"  Train AF: {train_af}/{len(train_idx)} ({train_af/len(train_idx)*100:.1f}%)")
+        print(f"  Val AF: {val_af}/{len(val_idx)} ({val_af/len(val_idx)*100:.1f}%)")
         
         fold_counter += 1
     
