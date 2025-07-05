@@ -7,6 +7,7 @@ from .data_processing import (
     resample_signal,
     normalize_signal,
     create_sliding_windows,
+    create_train_splits_with_cv,
     PPGInferenceDataset
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     'resample_signal',
     'normalize_signal',
     'create_sliding_windows',
+    'create_train_splits_with_cv',
     'PPGInferenceDataset'
 ]

@@ -39,37 +39,43 @@ def extract_spectral_entropy(ppg_segment):
 
 
 def extract_frequency_bands(ppg_segment, fs=125):
-    """Extract energy in different frequency bands"""
     # Apply FFT
     yf = fft(ppg_segment)
     N = len(ppg_segment)
     xf = fftfreq(N, 1/fs)[:N//2]
     power_spectrum = np.abs(yf[:N//2])**2
     
-    # Define frequency bands (in Hz)
-    vlf_band = (0.003, 0.04)    # Very low frequency
-    lf_band = (0.04, 0.15)      # Low frequency
-    hf_band = (0.15, 0.4)       # High frequency
+    # Define PPG-appropriate frequency bands (in Hz)
+    vlf_band = (0.003, 0.04)    # Very low frequency (autonomic)
+    lf_band = (0.04, 0.15)      # Low frequency (autonomic modulation)
+    resp_band = (0.15, 0.4)     # Respiratory modulation
+    cardiac_band = (0.75, 2.5)  # Cardiac frequency (45-150 BPM)
     
     # Calculate energy in each band
     total_power = np.sum(power_spectrum)
     
-    # vlf_power = np.sum(power_spectrum[(xf >= vlf_band[0]) & (xf < vlf_band[1])]) if total_power > 0 else 0
-    lf_power = np.sum(power_spectrum[(xf >= lf_band[0]) & (xf < lf_band[1])]) if total_power > 0 else 0
-    hf_power = np.sum(power_spectrum[(xf >= hf_band[0]) & (xf < hf_band[1])]) if total_power > 0 else 0
-    
-    # Normalize by total power
     if total_power > 0:
-        #vlf_power_norm = vlf_power / total_power
+        vlf_power = np.sum(power_spectrum[(xf >= vlf_band[0]) & (xf < vlf_band[1])])
+        lf_power = np.sum(power_spectrum[(xf >= lf_band[0]) & (xf < lf_band[1])])
+        resp_power = np.sum(power_spectrum[(xf >= resp_band[0]) & (xf < resp_band[1])])
+        cardiac_power = np.sum(power_spectrum[(xf >= cardiac_band[0]) & (xf < cardiac_band[1])])
+        
+        # Normalize by total power
+        vlf_power_norm = vlf_power / total_power
         lf_power_norm = lf_power / total_power
-        hf_power_norm = hf_power / total_power
-        lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
+        resp_power_norm = resp_power / total_power
+        cardiac_power_norm = cardiac_power / total_power
+        
+        # Calculate meaningful ratios for PPG/AF detection
+        lf_resp_ratio = lf_power / resp_power if resp_power > 0 else 0
+        cardiac_resp_ratio = cardiac_power / resp_power if resp_power > 0 else 0
+        
     else:
-        # vlf_power_norm, lf_power_norm, hf_power_norm, lf_hf_ratio = 0, 0, 0, 0
-        lf_power_norm, hf_power_norm, lf_hf_ratio = 0, 0, 0
+        vlf_power_norm = lf_power_norm = resp_power_norm = cardiac_power_norm = 0
+        lf_resp_ratio = cardiac_resp_ratio = 0
     
-    # return vlf_power_norm, lf_power_norm, hf_power_norm, lf_hf_ratio
-    return lf_power_norm, hf_power_norm, lf_hf_ratio
+    # Return 6 features instead of 3
+    return vlf_power_norm, lf_power_norm, resp_power_norm, cardiac_power_norm, lf_resp_ratio, cardiac_resp_ratio
 
 
 def extract_wavelet_features(ppg_segment, wavelet='db4', level=5):
@@ -173,7 +179,7 @@ def extract_spectral_features(ppg_segment):
     spectral_entropy = extract_spectral_entropy(ppg_segment)
     
     # Extract Frequency Band features
-    lf, hf, lf_hf_ratio = extract_frequency_bands(ppg_segment)
+    vlf, lf, resp, cardiac, lf_resp_ratio, cardiac_resp_ratio = extract_frequency_bands(ppg_segment)
     
     # Extract Wavelet features
     MAVcA, AEcA, STDcA, d1_energy, d2_energy, d3_energy = extract_wavelet_features(ppg_segment)
@@ -183,92 +189,180 @@ def extract_spectral_features(ppg_segment):
     
     # Combine all features
     features = np.array([
-        spectral_entropy, lf, hf, lf_hf_ratio,
-        MAVcA, AEcA, STDcA, d1_energy, d2_energy, d3_energy,
-        *vfcdm_features  # Unpack VFCDM features
+    spectral_entropy, vlf, lf, resp, cardiac, lf_resp_ratio, cardiac_resp_ratio,
+    MAVcA, AEcA, STDcA, d1_energy, d2_energy, d3_energy,
+    *vfcdm_features  # Unpack VFCDM features
     ]).reshape(1, -1)
     
     return features
 
-def rfe_feature_selection(X, y, patient_ids, model, min_features=1, max_features=None, step=1, verbose=True):
-    """
-    Perform Recursive Feature Elimination with Cross-Validation
+# def rfe_feature_selection(X, y, patient_ids, model, min_features=1, max_features=None, step=1, verbose=True):
+#     """
+#     Perform Recursive Feature Elimination with Cross-Validation
     
-    Parameters:
-    -----------
-    X : numpy array
-        Feature matrix
-    y : numpy array
-        Target labels
-    patient_ids : list or numpy array
-        Patient IDs for each sample
-    model : estimator
-        Model to use for selection
-    min_features : int
-        Minimum number of features to select
-    max_features : int or None
-        Maximum number of features to select (None means X.shape[1])
-    step : int
-        Number of features to remove at each iteration
-    verbose : bool
-        Whether to print progress
+#     Parameters:
+#     -----------
+#     X : numpy array
+#         Feature matrix
+#     y : numpy array
+#         Target labels
+#     patient_ids : list or numpy array
+#         Patient IDs for each sample
+#     model : estimator
+#         Model to use for selection
+#     min_features : int
+#         Minimum number of features to select
+#     max_features : int or None
+#         Maximum number of features to select (None means X.shape[1])
+#     step : int
+#         Number of features to remove at each iteration
+#     verbose : bool
+#         Whether to print progress
     
-    Returns:
-    --------
-    tuple
-        (selected_indices, cv_scores)
+#     Returns:
+#     --------
+#     tuple
+#         (selected_indices, cv_scores)
+#     """
+#     from sklearn.feature_selection import RFE, RFECV
+#     from sklearn.model_selection import GroupKFold
+#     import numpy as np
+    
+#     if max_features is None:
+#         max_features = X.shape[1]
+#     else:
+#         max_features = min(max_features, X.shape[1])
+    
+#     # Set up patient-based cross-validation
+#     cv = GroupKFold(n_splits=5)
+    
+#     if verbose:
+#         print("Performing Recursive Feature Elimination with Cross-Validation...")
+#         print(f"Initial feature set size: {X.shape[1]}")
+    
+#     # Create RFECV selector
+#     selector = RFECV(
+#         estimator=model,
+#         step=step,
+#         cv=list(cv.split(X, y, groups=patient_ids)),  # Pre-defined patient-based splits
+#         scoring='roc_auc' if hasattr(model, 'predict_proba') else 'accuracy',
+#         min_features_to_select=min_features,
+#         n_jobs=-1,  # Use all available cores
+#         verbose=1 if verbose else 0
+#     )
+    
+#     # Fit the selector
+#     selector.fit(X, y)
+    
+#     # Get selected features
+#     selected_indices = np.where(selector.support_)[0]
+    
+#     # Limit to max_features if needed
+#     if len(selected_indices) > max_features:
+#         # Use the ranking to select the top max_features
+#         feature_ranks = selector.ranking_
+#         top_indices = np.argsort(feature_ranks)[:max_features]
+#         selected_indices = np.sort(top_indices)  # Keep in original order
+    
+#     # Get CV scores
+#     cv_scores = selector.cv_results_['mean_test_score']
+    
+#     if verbose:
+#         print(f"Optimal number of features: {len(selected_indices)}")
+#         print(f"Selected features: {[FEATURE_NAMES[i] for i in selected_indices]}")
+#         # Use cv_results_ instead of grid_scores_
+#         best_score = np.max(cv_scores)
+#         print(f"Best CV score: {best_score:.4f}")
+    
+#     return selected_indices, cv_scores
+
+
+def feature_selection(X_train, y_train, patient_ids, feature_names, 
+                     base_model, target_features=8, random_state=42):
     """
-    from sklearn.feature_selection import RFE, RFECV
+    Enhanced feature selection with stability analysis
+    """
+    from sklearn.feature_selection import RFECV, SelectKBest, f_classif
     from sklearn.model_selection import GroupKFold
-    import numpy as np
+    from collections import Counter
     
-    if max_features is None:
-        max_features = X.shape[1]
-    else:
-        max_features = min(max_features, X.shape[1])
+    print(f"Enhanced feature selection with stability testing...")
     
-    # Set up patient-based cross-validation
+    # Step 1: Statistical pre-filtering (remove clearly irrelevant features)
+    stat_selector = SelectKBest(score_func=f_classif, k=min(12, len(feature_names)))
+    X_filtered = stat_selector.fit_transform(X_train, y_train)
+    filtered_indices = stat_selector.get_support(indices=True)
+    filtered_names = [feature_names[i] for i in filtered_indices]
+    
+    print(f"Pre-filtered to {len(filtered_names)} statistically significant features")
+    
+    # Step 2: RFECV with patient-based CV
     cv = GroupKFold(n_splits=5)
+    cv_splits = list(cv.split(X_filtered, y_train, groups=patient_ids))
     
-    if verbose:
-        print("Performing Recursive Feature Elimination with Cross-Validation...")
-        print(f"Initial feature set size: {X.shape[1]}")
-    
-    # Create RFECV selector
-    selector = RFECV(
-        estimator=model,
-        step=step,
-        cv=list(cv.split(X, y, groups=patient_ids)),  # Pre-defined patient-based splits
-        scoring='roc_auc' if hasattr(model, 'predict_proba') else 'accuracy',
-        min_features_to_select=min_features,
-        n_jobs=-1,  # Use all available cores
-        verbose=1 if verbose else 0
+    # Enhanced RFECV with better parameters
+    rfecv = RFECV(
+        estimator=base_model,
+        step=1,  # Remove one feature at a time (more thorough)
+        cv=cv_splits,  # Patient-based CV
+        scoring='roc_auc',  # Good for imbalanced data
+        min_features_to_select=max(3, target_features-2),  # Reasonable minimum
+        n_jobs=-1,  # Use all cores
+        verbose=1
     )
     
-    # Fit the selector
-    selector.fit(X, y)
+    rfecv.fit(X_filtered, y_train)
     
-    # Get selected features
-    selected_indices = np.where(selector.support_)[0]
+    # Step 3: Stability analysis across multiple seeds
+    print("Performing stability analysis...")
     
-    # Limit to max_features if needed
-    if len(selected_indices) > max_features:
-        # Use the ranking to select the top max_features
-        feature_ranks = selector.ranking_
-        top_indices = np.argsort(feature_ranks)[:max_features]
-        selected_indices = np.sort(top_indices)  # Keep in original order
+    feature_stability = Counter()
+    seeds = [42, 123, 456, 789, 999]  # Multiple seeds for stability
     
-    # Get CV scores
-    cv_scores = selector.cv_results_['mean_test_score']
+    for seed in seeds:
+        # Create model with different seed
+        model_copy = base_model.__class__(**base_model.get_params())
+        model_copy.set_params(random_state=seed)
+        
+        # RFECV with this seed
+        rfecv_seed = RFECV(
+            estimator=model_copy,
+            step=1,
+            cv=cv_splits,
+            scoring='roc_auc',
+            min_features_to_select=max(3, target_features-2),
+            n_jobs=-1,
+            verbose=0
+        )
+        
+        rfecv_seed.fit(X_filtered, y_train)
+        
+        # Count selected features
+        selected_mask = rfecv_seed.support_
+        for i, selected in enumerate(selected_mask):
+            if selected:
+                feature_stability[filtered_names[i]] += 1
     
-    if verbose:
-        print(f"Optimal number of features: {len(selected_indices)}")
-        print(f"Selected features: {[FEATURE_NAMES[i] for i in selected_indices]}")
-        # Use cv_results_ instead of grid_scores_
-        best_score = np.max(cv_scores)
-        print(f"Best CV score: {best_score:.4f}")
+    # Step 4: Select most stable features
+    stability_threshold = len(seeds) * 0.6  # Feature must appear in 60% of runs
+    stable_features = [name for name, count in feature_stability.items() 
+                      if count >= stability_threshold]
     
-    return selected_indices, cv_scores
+    # If not enough stable features, take top ones by stability
+    if len(stable_features) < target_features:
+        sorted_by_stability = sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)
+        stable_features = [name for name, _ in sorted_by_stability[:target_features]]
+    
+    # Convert back to original indices
+    final_indices = [feature_names.index(name) for name in stable_features]
+    
+    print(f"Selected {len(stable_features)} stable features:")
+    for name in stable_features:
+        stability_count = feature_stability[name]
+        print(f"  {name}: {stability_count}/{len(seeds)} runs")
+    
+    # Return in same format as old function
+    return final_indices, rfecv.cv_results_['mean_test_score']
 
 def predict_spectral(ppg_segment, model, scaler=None, selected_indices=None):
     """Get prediction from spectral analysis model"""
@@ -320,18 +414,21 @@ def load_spectral_model(model_path, scaler_path=None, indices_path=None):
 
 # Feature names for reference
 FEATURE_NAMES = [
-    'SpEn',           # Spectral Entropy
-    'LF_Power',       # Low Frequency normalized power
-    'HF_Power',       # High Frequency normalized power
-    'LF_HF_Ratio',    # LF/HF power ratio
-    'MAVcA',          # Mean Absolute Value of approx. wavelet coeffs
-    'AEcA',           # Average Energy of approx. wavelet coeffs
-    'STDcA',          # Standard Deviation of approx. wavelet coeffs
-    'Detail1_Energy', # Energy in detail coefficients level 1
-    'Detail2_Energy', # Energy in detail coefficients level 2
-    'Detail3_Energy', # Energy in detail coefficients level 3
-    'VFCDM_Power_Ratio',      # Respiratory to cardiac power ratio
-    'VFCDM_Frequency_Ratio',  # Respiratory to cardiac frequency ratio
-    'VFCDM_Centroid',         # Spectral centroid
-    'VFCDM_Flatness'          # Spectral flatness
+    'SpEn',                    # Spectral Entropy
+    'VLF_Power',               # Very Low Frequency normalized power
+    'LF_Power',                # Low Frequency normalized power  
+    'Resp_Power',              # Respiratory band normalized power
+    'Cardiac_Power',           # Cardiac band normalized power
+    'LF_Resp_Ratio',           # LF/Respiratory power ratio
+    'Cardiac_Resp_Ratio',      # Cardiac/Respiratory power ratio
+    'MAVcA',                   # Mean Absolute Value of approx. wavelet coeffs
+    'AEcA',                    # Average Energy of approx. wavelet coeffs
+    'STDcA',                   # Standard Deviation of approx. wavelet coeffs
+    'Detail1_Energy',          # Energy in detail coefficients level 1
+    'Detail2_Energy',          # Energy in detail coefficients level 2
+    'Detail3_Energy',          # Energy in detail coefficients level 3
+    'VFCDM_Power_Ratio',       # Respiratory to cardiac power ratio
+    'VFCDM_Frequency_Ratio',   # Respiratory to cardiac frequency ratio
+    'VFCDM_Centroid',          # Spectral centroid
+    'VFCDM_Flatness'           # Spectral flatness
 ]

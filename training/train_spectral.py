@@ -14,7 +14,7 @@ import itertools
 
 
 from utils.data_processing import load_and_segment_data, create_train_splits_with_cv
-from models.spectral import extract_spectral_features, rfe_feature_selection,  FEATURE_NAMES
+from models.spectral import extract_spectral_features, feature_selection,  FEATURE_NAMES
 from results.model_results import ModelResults
 from results.visualization import (
     plot_feature_distributions,
@@ -125,7 +125,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     
     # Create visualizations using training data
     print("Creating feature visualizations...")
-    plot_feature_distributions(X_train, y_train, FEATURE_NAMES, viz_dir)
+    
     plot_feature_correlations(X_train, FEATURE_NAMES,
                             os.path.join(viz_dir, 'feature_correlations.png'))
     
@@ -259,26 +259,25 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     
     print("\nPerforming recursive feature elimination with cross-validation...")
     
-    # Use the best model for RFE (from the selected best model)
-    rfe_model = models[best_model_name]
-    rfe_model.set_params(**best_config['params'])
-    
-    # Scale features for RFE (use training data only)
-    rfe_scaler = StandardScaler()
-    X_train_scaled_rfe = rfe_scaler.fit_transform(X_train)
-    
-    print(f"Using {best_model_name} for RFE with {n_folds}-fold patient-based cross-validation")
+    # Use the best model for feature selection (from the selected best model)
+    fs_model = models[best_model_name]
+    fs_model.set_params(**best_config['params'])
+
+    # Scale features for feature selection (use training data only)
+    fs_scaler = StandardScaler()
+    X_train_scaled_fs = fs_scaler.fit_transform(X_train)
+
+    print(f"Using {best_model_name} for enhanced feature selection with {n_folds}-fold patient-based cross-validation")
     
     # Use RFE for feature selection on training data only
-    selected_indices, selection_scores = rfe_feature_selection(
-        X_train_scaled_rfe, 
-        y_train, 
-        train_patient_ids, 
-        rfe_model,
-        min_features=2,
-        max_features=min(10, X_train.shape[1]),  # Set a reasonable upper limit
-        step=1,  # Remove one feature at a time
-        verbose=True
+    selected_indices, selection_scores = feature_selection(
+        X_train_scaled_fs,
+        y_train,
+        train_patient_ids,
+        FEATURE_NAMES,
+        fs_model,
+        target_features=8,
+        random_state=random_seed
     )
 
     print(f"Selected {len(selected_indices)} features: {[FEATURE_NAMES[idx] for idx in selected_indices]}")
@@ -298,11 +297,11 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     )
 
     # Save selected features to text file
-    save_selected_features_list(
-        selected_indices,
-        FEATURE_NAMES,
-        save_path=os.path.join(save_dir, 'selected_features.txt')
-    )
+    # save_selected_features_list(
+    #     selected_indices,
+    #     FEATURE_NAMES,
+    #     save_path=os.path.join(save_dir, 'selected_features.txt')
+    # )
 
     # Save selected indices
     joblib.dump(selected_indices, os.path.join(save_dir, 'selected_indices.pkl'))
@@ -450,6 +449,8 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         'test': test_metrics,
         'patient': patient_metrics
     })
+
+    results.save_metrics()
     
     # Save models and additional data
     joblib.dump(final_scaler, os.path.join(save_dir, 'scaler.pkl'))  # Use final_scaler instead of scaler
@@ -459,30 +460,30 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     # Create visualizations for final model (now includes validation set)
     print("\nCreating final visualizations...")
     plot_confusion_matrix(y_test, y_test_pred, os.path.join(viz_dir, 'test_confusion_matrix.png'))
-    plot_confusion_matrix(y_train, y_train_pred, os.path.join(viz_dir, 'train_confusion_matrix.png'))
-    plot_confusion_matrix(y_val, y_val_pred, os.path.join(viz_dir, 'val_confusion_matrix.png'))  # Added validation confusion matrix
+    # plot_confusion_matrix(y_train, y_train_pred, os.path.join(viz_dir, 'train_confusion_matrix.png'))
+    # plot_confusion_matrix(y_val, y_val_pred, os.path.join(viz_dir, 'val_confusion_matrix.png'))  # Added validation confusion matrix
     
     if hasattr(final_model, 'predict_proba'):
         plot_roc_curve(y_test, y_test_prob, os.path.join(viz_dir, 'test_roc_curve.png'))
-        plot_roc_curve(y_train, y_train_prob, os.path.join(viz_dir, 'train_roc_curve.png'))
-        plot_roc_curve(y_val, y_val_prob, os.path.join(viz_dir, 'val_roc_curve.png'))  # Added validation ROC curve
+        #plot_roc_curve(y_train, y_train_prob, os.path.join(viz_dir, 'train_roc_curve.png'))
+        #plot_roc_curve(y_val, y_val_prob, os.path.join(viz_dir, 'val_roc_curve.png'))  # Added validation ROC curve
     
     # If the model provides feature importances, visualize those too
-    if hasattr(final_model, 'feature_importances_'):
-        # Save model's feature importance values to file
-        with open(os.path.join(save_dir, 'model_feature_importances.txt'), 'w') as f:
-            f.write("Model's Internal Feature Importances:\n")
-            f.write("====================================\n\n")
+    # if hasattr(final_model, 'feature_importances_'):
+    #     # Save model's feature importance values to file
+    #     with open(os.path.join(save_dir, 'model_feature_importances.txt'), 'w') as f:
+    #         f.write("Model's Internal Feature Importances:\n")
+    #         f.write("====================================\n\n")
             
-            # Get importances and feature names for selected features only
-            importances = final_model.feature_importances_
-            names = [FEATURE_NAMES[i] for i in selected_indices]
+    #         # Get importances and feature names for selected features only
+    #         importances = final_model.feature_importances_
+    #         names = [FEATURE_NAMES[i] for i in selected_indices]
             
-            # Sort by importance
-            sorted_indices = np.argsort(importances)[::-1]
+    #         # Sort by importance
+    #         sorted_indices = np.argsort(importances)[::-1]
             
-            for i in sorted_indices:
-                f.write(f"{names[i]}: {importances[i]:.6f}\n")
+    #         for i in sorted_indices:
+    #             f.write(f"{names[i]}: {importances[i]:.6f}\n")
     
     # Create results report
     create_results_report(save_dir, 'spectral')

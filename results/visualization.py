@@ -152,7 +152,7 @@ def plot_rfecv_results(n_features_selected, cv_scores, save_path):
 
 
 def create_results_report(results_dir, model_type):
-    """Create a comprehensive results report"""
+    """Create a comprehensive results report with model metrics"""
     report_path = os.path.join(results_dir, 'results_report.txt')
     
     with open(report_path, 'w') as f:
@@ -171,37 +171,124 @@ def create_results_report(results_dir, model_type):
         except FileNotFoundError:
             f.write("Configuration file not found.\n\n")
         
-        # Load and report best metrics
+        # Load and report best model metrics (TEST SET ONLY)
         try:
             with open(os.path.join(results_dir, 'best_metrics.json'), 'r') as mf:
                 metrics = json.load(mf)
-                f.write("Best Performance Metrics:\n")
-                f.write("-" * 20 + "\n")
-                for key, value in metrics.items():
-                    f.write(f"{key}: {value:.4f}\n")
-                f.write("\n")
-        except FileNotFoundError:
-            f.write("Metrics file not found.\n\n")
-        
-        # Training summary
-        try:
-            with open(os.path.join(results_dir, 'training_history.json'), 'r') as hf:
-                history = json.load(hf)
-                f.write("Training Summary:\n")
-                f.write("-" * 20 + "\n")
+                f.write("Final Model Performance (Test Set):\n")
+                f.write("-" * 36 + "\n\n")
                 
-                # Check if we have training history data
-                if history.get('train_loss') and len(history['train_loss']) > 0:
-                    f.write(f"Total epochs: {len(history['train_loss'])}\n")
-                    f.write(f"Final training loss: {history['train_loss'][-1]:.4f}\n")
-                    f.write(f"Final validation loss: {history['val_loss'][-1]:.4f}\n")
-                    f.write(f"Best validation accuracy: {max(history['val_accuracy']):.4f}\n")
-                    f.write(f"Best validation F1: {max(history['val_f1']):.4f}\n")
-                else:
-                    f.write("Note: Traditional ML model - no epoch-based training history available\n")
-                    f.write("See best_metrics.json for final performance metrics\n")
+                # Test metrics only (industry standard)
+                if 'test' in metrics:
+                    test_metrics = metrics['test']
+                    f.write(f"Accuracy:  {test_metrics.get('accuracy', 0):.4f}\n")
+                    f.write(f"Precision: {test_metrics.get('precision', 0):.4f}\n")
+                    f.write(f"Recall:    {test_metrics.get('recall', 0):.4f}\n")
+                    f.write(f"F1 Score:  {test_metrics.get('f1', 0):.4f}\n")
+                    f.write(f"AUC:       {test_metrics.get('auc', 0):.4f}\n\n")
+                
+                # Patient-level metrics (also important for medical applications)
+                if 'patient' in metrics:
+                    f.write("Patient-Level Performance (Test Set):\n")
+                    f.write("-" * 34 + "\n")
+                    patient_metrics = metrics['patient']
+                    f.write(f"Accuracy:  {patient_metrics.get('accuracy', 0):.4f}\n")
+                    f.write(f"Precision: {patient_metrics.get('precision', 0):.4f}\n")
+                    f.write(f"Recall:    {patient_metrics.get('recall', 0):.4f}\n")
+                    f.write(f"F1 Score:  {patient_metrics.get('f1', 0):.4f}\n")
+                    if 'auc' in patient_metrics:
+                        f.write(f"AUC:       {patient_metrics.get('auc', 0):.4f}\n")
+                    f.write("\n")
+                
+                # Load CV results to show best model information
+                try:
+                    import joblib
+                    cv_results = joblib.load(os.path.join(results_dir, 'cv_results.pkl'))
+                    
+                    # Find the best model based on validation score
+                    best_model_name = None
+                    best_val_score = -1
+                    
+                    for model_name, config in cv_results.items():
+                        if config['val_score'] > best_val_score:
+                            best_val_score = config['val_score']
+                            best_model_name = model_name
+                    
+                    if best_model_name:
+                        f.write("Best Model Information:\n")
+                        f.write("-" * 23 + "\n")
+                        f.write(f"Selected Model: {best_model_name}\n")
+                        f.write(f"Validation Score: {best_val_score:.4f}\n")
+                        f.write(f"Best Parameters: {cv_results[best_model_name]['params']}\n\n")
+                
+                except (FileNotFoundError, ImportError):
+                    f.write("Best model information not available.\n\n")
+                
+                # Performance interpretation (based on test metrics only)
+                if 'test' in metrics:
+                    test_acc = metrics['test'].get('accuracy', 0)
+                    test_f1 = metrics['test'].get('f1', 0)
+                    test_auc = metrics['test'].get('auc', 0)
+                    
+                    f.write("Performance Interpretation:\n")
+                    f.write("-" * 27 + "\n")
+                    
+                    if test_acc > 0.9:
+                        f.write("Excellent: Test accuracy > 90%\n")
+                    elif test_acc > 0.8:
+                        f.write("Good: Test accuracy > 80%\n")
+                    elif test_acc > 0.7:
+                        f.write("Fair: Test accuracy > 70%\n")
+                    else:
+                        f.write("Needs improvement: Test accuracy < 70%\n")
+                    
+                    if test_f1 > 0.8:
+                        f.write("Strong F1 score indicates good balance of precision and recall\n")
+                    elif test_f1 > 0.7:
+                        f.write("Moderate F1 score\n")
+                    else:
+                        f.write("Low F1 score indicates precision/recall imbalance\n")
+                    
+                    if test_auc > 0.9:
+                        f.write("Excellent discriminative ability (AUC > 0.9)\n")
+                    elif test_auc > 0.8:
+                        f.write("Good discriminative ability (AUC > 0.8)\n")
+                    elif test_auc > 0.7:
+                        f.write("Fair discriminative ability (AUC > 0.7)\n")
+                    else:
+                        f.write("Poor discriminative ability (AUC < 0.7)\n")
+                    
+                    f.write("\n")
+                        
         except FileNotFoundError:
-            f.write("Training history file not found.\n\n")
+            f.write("Best model metrics file not found.\n\n")
+        
+        # Load selected features information
+        try:
+            import joblib
+            selected_indices = joblib.load(os.path.join(results_dir, 'selected_indices.pkl'))
+            # Import feature names
+            from models.spectral import FEATURE_NAMES
+            
+            f.write("Feature Selection Summary:\n")
+            f.write("-" * 25 + "\n")
+            f.write(f"Selected {len(selected_indices)} out of {len(FEATURE_NAMES)} features\n")
+            f.write("Selected features:\n")
+            for i, idx in enumerate(selected_indices):
+                f.write(f"  {i+1}. {FEATURE_NAMES[idx]}\n")
+            f.write("\n")
+            
+        except (FileNotFoundError, ImportError):
+            f.write("Feature selection information not available.\n\n")
+        
+        # Summary
+        f.write("Summary:\n")
+        f.write("-" * 8 + "\n")
+        f.write("This model uses spectral feature extraction combined with\n")
+        f.write("machine learning classification for AF detection from PPG signals.\n")
+        f.write("Patient-level splitting ensures no data leakage between sets.\n")
+        f.write("Recursive feature elimination was used to select optimal features.\n")
+        f.write("\nFor visualization results, check the 'visualizations' folder.\n")
 
 def plot_feature_selection_scores(scores, feature_counts=None, save_path=None, title="Feature Selection Scores"):
     """

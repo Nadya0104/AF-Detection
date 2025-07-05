@@ -386,44 +386,28 @@ def process_folder(folder_path, label, min_fragment_size, target_fragment_size, 
 
 def extract_patient_id(filename):
     """
-    Extract patient ID from filename
-    
-    Parameters:
-    -----------
-    filename : str
-        Filename to extract patient ID from
-    
-    Returns:
-    --------
-    str
-        Patient ID
+    Extract unique patient ID that distinguishes between AF and non-AF patients
     """
+    import re
+    
     try:
         if "non_af" in filename:
-            # For non-AF files like "mimic_perform_non_af_001_data.csv"
-            parts = filename.split('non_af_')
-            if len(parts) > 1:
-                # Extract the number part (001)
-                patient_id = parts[1].split('_')[0]
-                return patient_id
-            else:
-                return filename
-        elif "_af_" in filename:
-            # For AF files like "mimic_perform_af_001_data.csv"
-            parts = filename.split('_af_')
-            if len(parts) > 1:
-                # Extract the number part (001)
-                patient_id = parts[1].split('_')[0]
-                return patient_id
-            else:
-                return filename
+            # Healthy patient
+            match = re.search(r'non_af_(\d+)', filename)
+            if match:
+                number = match.group(1)
+                return f"HEALTHY_{number}"
         else:
-            # Fallback
-            return filename
+            # AF patient 
+            match = re.search(r'(?<!non_)af_(\d+)', filename)
+            if match:
+                number = match.group(1)
+                return f"AF_{number}"
+        
+        return filename  # fallback
+        
     except Exception as e:
-        # Log the exception for debugging
         print(f"Error extracting patient ID from {filename}: {e}")
-        # Fallback for any extraction errors
         return filename
 
 

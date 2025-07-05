@@ -48,11 +48,11 @@ class ModelResults:
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=4)
     
-    def save_history(self):
-        """Save training history"""
-        history_path = os.path.join(self.save_dir, 'training_history.json')
-        with open(history_path, 'w') as f:
-            json.dump(self.history, f, indent=4)
+    # def save_history(self):
+    #     """Save training history"""
+    #     history_path = os.path.join(self.save_dir, 'training_history.json')
+    #     with open(history_path, 'w') as f:
+    #         json.dump(self.history, f, indent=4)
     
     def save_metrics(self):
         """Save best metrics"""

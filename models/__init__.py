@@ -9,7 +9,8 @@ from .spectral import (
     extract_frequency_bands,
     extract_wavelet_features,
     extract_spectral_features,
-    predict_spectral
+    predict_spectral,
+    feature_selection
 )
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     'extract_frequency_bands',
     'extract_wavelet_features',
     'extract_spectral_features',
-    'predict_spectral'
+    'predict_spectral',
+    'feature_selection'
 ]
