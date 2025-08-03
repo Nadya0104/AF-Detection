@@ -1,0 +1,13 @@
+Transformer Model - Final Test Report
+========================================
+
+Metrics Summary:
+- Accuracy:  0.5009
+- Precision: 0.5495
+- Recall:    0.6997
+- F1-score:  0.6156
+- ROC AUC:   0.5369
+
+Summary:
+This report details the model's performance on the held-out test set after selecting
+the best model from a 5-fold cross-validation procedure on the training data.
