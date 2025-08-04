@@ -17,16 +17,10 @@ from utils.data_processing import load_and_segment_data, create_train_splits_wit
 from models.spectral import extract_spectral_features, feature_selection,  FEATURE_NAMES
 from results.model_results import ModelResults
 from results.visualization import (
-    plot_feature_distributions,
-    plot_feature_correlations,
-    plot_spectral_feature_importance,
     plot_confusion_matrix,
     plot_roc_curve,
-    create_results_report,
-    plot_feature_selection_scores,            
+    create_results_report,            
     plot_feature_importance_from_selection,  
-    save_selected_features_list,              
-    plot_feature_importances_from_model
 )
 
 
@@ -122,12 +116,6 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         'n_folds': n_folds,
         'random_state': random_seed
     })
-    
-    # Create visualizations using training data
-    print("Creating feature visualizations...")
-    
-    plot_feature_correlations(X_train, FEATURE_NAMES,
-                            os.path.join(viz_dir, 'feature_correlations.png'))
     
     # Create CV folds from training data only
     print("Creating cross-validation folds from training data...")
@@ -282,26 +270,11 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
 
     print(f"Selected {len(selected_indices)} features: {[FEATURE_NAMES[idx] for idx in selected_indices]}")
 
-    # Create visualizations for feature selection
-    plot_feature_selection_scores(
-        selection_scores, 
-        feature_counts=range(2, len(selection_scores) + 2),  # Adjust range to match min_features
-        save_path=os.path.join(viz_dir, 'feature_selection_scores.png'),
-        title="Recursive Feature Elimination CV"
-    )
-
     plot_feature_importance_from_selection(
         selected_indices,
         FEATURE_NAMES, 
         save_path=os.path.join(viz_dir, 'feature_importance.png')
     )
-
-    # Save selected features to text file
-    # save_selected_features_list(
-    #     selected_indices,
-    #     FEATURE_NAMES,
-    #     save_path=os.path.join(save_dir, 'selected_features.txt')
-    # )
 
     # Save selected indices
     joblib.dump(selected_indices, os.path.join(save_dir, 'selected_indices.pkl'))

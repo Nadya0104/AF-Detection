@@ -4,38 +4,10 @@ Visualization functions for model results
 
 import os
 import numpy as np
-import pandas as pd
 import json
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, roc_curve, auc
-
-
-# def plot_training_history(history, save_dir):
-#     """Plot training history"""
-#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-    
-#     # Plot loss
-#     ax1.plot(history['train_loss'], label='Train Loss')
-#     ax1.plot(history['val_loss'], label='Validation Loss')
-#     ax1.set_xlabel('Epoch')
-#     ax1.set_ylabel('Loss')
-#     ax1.set_title('Training and Validation Loss')
-#     ax1.legend()
-#     ax1.grid(True)
-    
-#     # Plot metrics
-#     ax2.plot(history['val_accuracy'], label='Accuracy')
-#     ax2.plot(history['val_f1'], label='F1 Score')
-#     ax2.set_xlabel('Epoch')
-#     ax2.set_ylabel('Score')
-#     ax2.set_title('Validation Metrics')
-#     ax2.legend()
-#     ax2.grid(True)
-    
-#     plt.tight_layout()
-#     plt.savefig(os.path.join(save_dir, 'training_history.png'))
-#     plt.close()
 
 
 def plot_confusion_matrix(y_true, y_pred, save_path, class_names=['Normal', 'AF']):
@@ -73,82 +45,6 @@ def plot_roc_curve(y_true, y_prob, save_path):
     plt.close()
     
     return fpr, tpr, roc_auc
-
-
-def plot_feature_distributions(X_features, y, feature_names, save_dir):
-    """Plot distribution of features for AF vs Normal"""
-    X_features_df = pd.DataFrame(X_features, columns=feature_names)
-    X_features_df['Label'] = y
-    X_features_df['Label'] = X_features_df['Label'].map({0: 'Normal', 1: 'AF'})
-    
-    # Box plots for each feature
-    n_features = len(feature_names)
-    n_rows = (n_features + 3) // 4  # 4 features per row
-    
-    plt.figure(figsize=(20, 5 * n_rows))
-    for i, feature in enumerate(feature_names):
-        plt.subplot(n_rows, 4, i + 1)
-        sns.boxplot(x='Label', y=feature, data=X_features_df)
-        plt.title(f'Distribution of {feature}')
-        plt.tight_layout()
-    
-    plt.savefig(os.path.join(save_dir, 'feature_distributions.png'))
-    plt.close()
-
-
-def plot_feature_correlations(X_features, feature_names, save_path):
-    """Plot feature correlation matrix"""
-    X_features_df = pd.DataFrame(X_features, columns=feature_names)
-    
-    plt.figure(figsize=(14, 12))
-    corr_matrix = X_features_df.corr()
-    mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
-    sns.heatmap(corr_matrix, mask=mask, annot=True, cmap='coolwarm', fmt='.2f', 
-                square=True, linewidths=.5)
-    plt.title('Feature Correlation Matrix')
-    plt.tight_layout()
-    plt.savefig(save_path)
-    plt.close()
-
-
-def plot_spectral_feature_importance(feature_names, importances, save_path):
-    """Plot feature importance for spectral features"""
-    indices = np.argsort(importances)[::-1]
-    
-    plt.figure(figsize=(12, 8))
-    plt.title('Feature Importances')
-    plt.bar(range(len(importances)), importances[indices], align='center')
-    plt.xticks(range(len(importances)), [feature_names[i] for i in indices], rotation=90)
-    plt.xlabel('Features')
-    plt.ylabel('Importance Score')
-    plt.tight_layout()
-    plt.savefig(save_path)
-    plt.close()
-
-
-# def plot_segment_length_distribution(segment_lengths, save_path):
-#     """Plot distribution of segment lengths"""
-#     plt.figure(figsize=(10, 6))
-#     plt.hist(segment_lengths, bins=20)
-#     plt.title('Distribution of Segment Lengths')
-#     plt.xlabel('Length (samples)')
-#     plt.ylabel('Count')
-#     plt.tight_layout()
-#     plt.savefig(save_path)
-#     plt.close()
-
-
-def plot_rfecv_results(n_features_selected, cv_scores, save_path):
-    """Plot Recursive Feature Elimination with Cross-Validation results"""
-    plt.figure(figsize=(10, 6))
-    plt.xlabel("Number of features selected")
-    plt.ylabel("Cross validation score (AUC)")
-    plt.plot(range(1, len(cv_scores) + 1), cv_scores, 'o-')
-    plt.axvline(x=n_features_selected, color='r', linestyle='--')
-    plt.title('Recursive Feature Elimination with Cross-Validation')
-    plt.tight_layout()
-    plt.savefig(save_path)
-    plt.close()
 
 
 def create_results_report(results_dir, model_type):
@@ -290,49 +186,7 @@ def create_results_report(results_dir, model_type):
         f.write("Recursive feature elimination was used to select optimal features.\n")
         f.write("\nFor visualization results, check the 'visualizations' folder.\n")
 
-def plot_feature_selection_scores(scores, feature_counts=None, save_path=None, title="Feature Selection Scores"):
-    """
-    Plot feature selection scores
-    
-    Parameters:
-    -----------
-    scores : list or numpy array
-        Scores at each step
-    feature_counts : list or numpy array, optional
-        Number of features at each step. If None, assumes sequential integers.
-    save_path : str, optional
-        Path to save plot. If None, displays the plot instead.
-    title : str
-        Title for the plot
-    """
-    import matplotlib.pyplot as plt
-    import numpy as np
-    
-    # If feature_counts is not provided, create sequential integers
-    if feature_counts is None:
-        feature_counts = range(1, len(scores) + 1)
-    
-    plt.figure(figsize=(10, 6))
-    plt.plot(feature_counts, scores, 'o-', markersize=8, linewidth=2)
-    plt.xlabel('Number of Features')
-    plt.ylabel('Cross-Validation Score')
-    plt.title(title)
-    plt.grid(True)
-    
-    # Highlight the optimal number of features
-    best_idx = np.argmax(scores)
-    plt.axvline(x=feature_counts[best_idx], color='r', linestyle='--')
-    plt.text(feature_counts[best_idx] + 0.1, scores[best_idx], 
-             f'Optimal: {feature_counts[best_idx]} features', 
-             va='center')
-    
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
+
 
 def plot_feature_importance_from_selection(selected_indices, feature_names, save_path):
     """
@@ -371,73 +225,5 @@ def plot_feature_importance_from_selection(selected_indices, feature_names, save
     plt.close()
 
 
-def save_selected_features_list(selected_indices, feature_names, save_path):
-    """
-    Save list of selected features to text file
-    
-    Parameters:
-    -----------
-    selected_indices : list
-        Indices of selected features in order of importance
-    feature_names : list
-        Names of all features
-    save_path : str
-        Path to save text file
-    """
-    with open(save_path, 'w') as f:
-        f.write("Selected Features for AF Detection\n")
-        f.write("=================================\n\n")
-        f.write("Features in order of selection (most important first):\n\n")
-        
-        for i, idx in enumerate(selected_indices):
-            f.write(f"{i+1}. {feature_names[idx]}\n")
-        
-        f.write("\nFeature selection helps reduce overfitting and improves model generalization.\n")
-        f.write("The order of selection indicates the relative importance of each feature for AF detection.")
 
 
-def plot_feature_importances_from_model(model, feature_names, selected_indices=None, save_path=None):
-    """
-    Plot feature importances from a trained model
-    
-    Parameters:
-    -----------
-    model : estimator
-        Trained model with feature_importances_ attribute
-    feature_names : list
-        Names of all features
-    selected_indices : list or None
-        Indices of selected features (if None, use all features)
-    save_path : str or None
-        Path to save plot (None means display only)
-    """
-    if not hasattr(model, 'feature_importances_'):
-        print("Model does not have feature_importances_ attribute")
-        return
-    
-    importances = model.feature_importances_
-    
-    if selected_indices is not None:
-        # Only show importances for selected features
-        names = [feature_names[i] for i in selected_indices]
-        importances = importances[selected_indices]
-    else:
-        names = feature_names
-    
-    # Sort features by importance
-    indices = np.argsort(importances)[::-1]
-    sorted_names = [names[i] for i in indices]
-    sorted_importances = importances[indices]
-    
-    plt.figure(figsize=(10, 6))
-    plt.title('Feature Importances from Model')
-    plt.barh(range(len(sorted_names)), sorted_importances, align='center')
-    plt.yticks(range(len(sorted_names)), sorted_names)
-    plt.xlabel('Relative Importance')
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
