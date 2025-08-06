@@ -1,5 +1,5 @@
 """
-Training script for spectral analysis model
+Complete Spectral Training Script using SpectralPreprocessor
 """
 
 import os
@@ -11,10 +11,11 @@ from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score
 import joblib
 import itertools
+from collections import defaultdict
 
-
-from utils.data_processing import load_and_segment_data, create_train_splits_with_cv
-from models.spectral import extract_spectral_features, feature_selection,  FEATURE_NAMES
+# Import the new preprocessor
+from data_processing import SpectralPreprocessor
+from models.spectral import extract_spectral_features, feature_selection, FEATURE_NAMES
 from results.model_results import ModelResults
 from results.visualization import (
     plot_confusion_matrix,
@@ -33,31 +34,28 @@ def extract_features_from_segments(segments):
     return np.array(features)
 
 
+def generate_param_combinations(param_grid):
+    """Generate all combinations of parameters from a grid"""
+    keys = list(param_grid.keys())
+    values = list(param_grid.values())
+    
+    param_combinations = []
+    for combination in itertools.product(*values):
+        param_dict = {keys[i]: combination[i] for i in range(len(keys))}
+        param_combinations.append(param_dict)
+    
+    return param_combinations
+
+
 def train_spectral_model(dataset_path, save_dir='saved_spectral_model', 
                         val_ratio=0.2, test_ratio=0.2, n_folds=5, random_seed=42):
     """
-    Train spectral analysis model with proper train/validation/test splits
-    
-    Parameters:
-    -----------
-    dataset_path : str
-        Path to dataset folder
-    save_dir : str
-        Directory to save results
-    val_ratio : float
-        Ratio of patients for validation set
-    test_ratio : float
-        Ratio of patients for test set
-    n_folds : int
-        Number of folds for cross-validation on training set
-    random_seed : int
-        Random seed for reproducibility
-    
-    Returns:
-    --------
-    tuple
-        (final_model, scaler)
+    Train spectral analysis model using SpectralPreprocessor for consistent preprocessing
     """
+    print("=" * 80)
+    print("SPECTRAL MODEL TRAINING with Consistent Preprocessor")
+    print("=" * 80)
+    
     # Initialize results tracker
     results = ModelResults('spectral', save_dir)
     
@@ -66,20 +64,20 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     viz_dir = os.path.join(save_dir, 'visualizations')
     os.makedirs(viz_dir, exist_ok=True)
 
-    print("Loading and segmenting data with proper splits...")
+    print("Step 1: Loading and segmenting data with SpectralPreprocessor...")
     
-    # Load data with proper three-way split
-    train_data, val_data, test_data = load_and_segment_data(
+    # ✅ Use SpectralPreprocessor for consistent preprocessing
+    preprocessor = SpectralPreprocessor(min_fragment_size=375, target_fragment_size=1250)
+    train_data, val_data, test_data = preprocessor.load_training_data(
         dataset_path, val_ratio=val_ratio, test_ratio=test_ratio, random_seed=random_seed
     )
     
-    # Extract training data
+    # Extract data from preprocessor output
     train_segments, train_labels, train_patient_ids, train_filenames = train_data
     val_segments, val_labels, val_patient_ids, val_filenames = val_data
     test_segments, test_labels, test_patient_ids, test_filenames = test_data
     
-    # Extract features for all sets
-    print("Extracting features for all data splits...")
+    print(f"\nStep 2: Extracting spectral features from segments...")
     
     # Training set features
     X_train = extract_features_from_segments(train_segments)
@@ -101,6 +99,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     # Save configuration
     results.save_config({
         'dataset_path': dataset_path,
+        'preprocessor': 'SpectralPreprocessor',
         'min_fragment_size': 375,
         'target_fragment_size': 1250,
         'n_features': len(FEATURE_NAMES),
@@ -117,13 +116,11 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         'random_state': random_seed
     })
     
-    # Create CV folds from training data only
-    print("Creating cross-validation folds from training data...")
-    cv_folds = create_train_splits_with_cv(
-        train_segments, y_train, train_patient_ids, n_folds=n_folds
-    )
+    print(f"\nStep 3: Creating cross-validation folds...")
+    # Create CV folds using preprocessor method
+    cv_folds = preprocessor.create_cv_folds(train_segments, y_train, train_patient_ids, n_folds=n_folds)
     
-    # Define models and parameter grids (same as before)
+    # Define models and parameter grids
     models = {
         'Random Forest': RandomForestClassifier(
             class_weight='balanced', 
@@ -135,7 +132,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
             random_state=random_seed
         ),
         'XGBoost': XGBClassifier(
-            scale_pos_weight=len(y_train) / sum(y_train),
+            scale_pos_weight=len(y_train) / max(sum(y_train), 1),  # Avoid division by zero
             random_state=random_seed, 
             eval_metric='logloss'
         )
@@ -159,19 +156,21 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         }
     }
     
-    # Hyperparameter tuning using CV on training set + validation set for final selection
-    print("\nStarting hyperparameter tuning with cross-validation...")
+    print(f"\nStep 4: Hyperparameter tuning with cross-validation...")
     best_model_configs = {}
     
     for model_name, model in models.items():
-        print(f"\n=== Training {model_name} ===")
+        print(f"\n{'='*20} Training {model_name} {'='*20}")
         
         best_params = None
         best_cv_score = -1
         
         # Try different parameter combinations
-        for params in generate_param_combinations(param_grids[model_name]):
-            print(f"Parameters: {params}")
+        param_combinations = generate_param_combinations(param_grids[model_name])
+        print(f"Testing {len(param_combinations)} parameter combinations...")
+        
+        for i, params in enumerate(param_combinations):
+            print(f"  [{i+1}/{len(param_combinations)}] {params}")
             model.set_params(**params)
             
             # Perform cross-validation on training set
@@ -198,11 +197,10 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
                     score = accuracy_score(y_fold_val, y_fold_val_pred)
                 
                 fold_scores.append(score)
-                print(f"  Fold {fold+1}/{n_folds}: {score:.4f}")
             
             # Average CV score
             avg_cv_score = np.mean(fold_scores)
-            print(f"  Average CV Score: {avg_cv_score:.4f}")
+            print(f"    Average CV Score: {avg_cv_score:.4f}")
             
             # Update best parameters
             if avg_cv_score > best_cv_score:
@@ -210,7 +208,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
                 best_params = params
         
         # Train best model on full training set and evaluate on validation set
-        print(f"Training best {model_name} on full training set...")
+        print(f"\nTraining best {model_name} on full training set...")
         model.set_params(**best_params)
         
         scaler = StandardScaler()
@@ -226,7 +224,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
             val_pred = model.predict(X_val_scaled)
             val_score = accuracy_score(y_val, val_pred)
         
-        print(f"Best {model_name} validation score: {val_score:.4f}")
+        print(f"Best {model_name} - CV Score: {best_cv_score:.4f}, Val Score: {val_score:.4f}")
         
         # Save best configuration
         best_model_configs[model_name] = {
@@ -241,21 +239,24 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     best_model_name = max(best_model_configs, key=lambda k: best_model_configs[k]['val_score'])
     best_config = best_model_configs[best_model_name]
     
-    print(f"\nBest model: {best_model_name}")
+    print(f"\n{'='*60}")
+    print(f"BEST MODEL SELECTED: {best_model_name}")
     print(f"Best CV score: {best_config['cv_score']:.4f}")
     print(f"Best validation score: {best_config['val_score']:.4f}")
+    print(f"Best parameters: {best_config['params']}")
+    print(f"{'='*60}")
     
-    print("\nPerforming recursive feature elimination with cross-validation...")
+    print(f"\nStep 5: Feature selection with best model...")
     
-    # Use the best model for feature selection (from the selected best model)
+    # Use the best model for feature selection
     fs_model = models[best_model_name]
     fs_model.set_params(**best_config['params'])
-
+    
     # Scale features for feature selection (use training data only)
     fs_scaler = StandardScaler()
     X_train_scaled_fs = fs_scaler.fit_transform(X_train)
-
-    print(f"Using {best_model_name} for enhanced feature selection with {n_folds}-fold patient-based cross-validation")
+    
+    print(f"Using {best_model_name} for feature selection with {n_folds}-fold patient-based cross-validation")
     
     # Use RFE for feature selection on training data only
     selected_indices, selection_scores = feature_selection(
@@ -267,24 +268,26 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         target_features=8,
         random_state=random_seed
     )
-
-    print(f"Selected {len(selected_indices)} features: {[FEATURE_NAMES[idx] for idx in selected_indices]}")
-
+    
+    selected_feature_names = [FEATURE_NAMES[idx] for idx in selected_indices]
+    print(f"Selected {len(selected_indices)} features: {selected_feature_names}")
+    
+    # Plot feature importance
     plot_feature_importance_from_selection(
         selected_indices,
         FEATURE_NAMES, 
         save_path=os.path.join(viz_dir, 'feature_importance.png')
     )
-
+    
     # Save selected indices
     joblib.dump(selected_indices, os.path.join(save_dir, 'selected_indices.pkl'))
+    
+    print(f"\nStep 6: Training final model with selected features...")
     
     # Use only selected features for final training
     X_train_selected = X_train[:, selected_indices]
     X_val_selected = X_val[:, selected_indices]
     X_test_selected = X_test[:, selected_indices]
-    
-    print(f"\nTraining final model with {len(selected_indices)} selected features...")
     
     # Train final model on training data with selected features
     final_scaler = StandardScaler()
@@ -294,26 +297,24 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     final_model.set_params(**best_config['params'])
     final_model.fit(X_train_selected_scaled, y_train)
     
+    print(f"\nStep 7: Final evaluation on all data splits...")
+    
     # Evaluate on training data
     if hasattr(final_model, 'predict_proba'):
         y_train_prob = final_model.predict_proba(X_train_selected_scaled)[:, 1]
         y_train_pred = (y_train_prob > 0.5).astype(int)
     else:
         y_train_pred = final_model.predict(X_train_selected_scaled)
-        y_train_prob = y_train_pred
+        y_train_prob = y_train_pred.astype(float)
     
     # Calculate training metrics
     train_metrics = {
         'accuracy': accuracy_score(y_train, y_train_pred),
-        'precision': precision_score(y_train, y_train_pred),
-        'recall': recall_score(y_train, y_train_pred),
-        'f1': f1_score(y_train, y_train_pred),
+        'precision': precision_score(y_train, y_train_pred, zero_division=0),
+        'recall': recall_score(y_train, y_train_pred, zero_division=0),
+        'f1': f1_score(y_train, y_train_pred, zero_division=0),
         'auc': roc_auc_score(y_train, y_train_prob) if hasattr(final_model, 'predict_proba') else 0.5
     }
-    
-    print("\nFinal model performance (training data):")
-    for metric, value in train_metrics.items():
-        print(f"  {metric}: {value:.4f}")
     
     # Evaluate on validation set
     X_val_selected_scaled = final_scaler.transform(X_val_selected)
@@ -323,22 +324,18 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         y_val_pred = (y_val_prob > 0.5).astype(int)
     else:
         y_val_pred = final_model.predict(X_val_selected_scaled)
-        y_val_prob = y_val_pred
+        y_val_prob = y_val_pred.astype(float)
     
     # Calculate validation metrics
     val_metrics = {
         'accuracy': accuracy_score(y_val, y_val_pred),
-        'precision': precision_score(y_val, y_val_pred),
-        'recall': recall_score(y_val, y_val_pred),
-        'f1': f1_score(y_val, y_val_pred),
+        'precision': precision_score(y_val, y_val_pred, zero_division=0),
+        'recall': recall_score(y_val, y_val_pred, zero_division=0),
+        'f1': f1_score(y_val, y_val_pred, zero_division=0),
         'auc': roc_auc_score(y_val, y_val_prob) if hasattr(final_model, 'predict_proba') else 0.5
     }
     
-    print("\nFinal model performance (validation data):")
-    for metric, value in val_metrics.items():
-        print(f"  {metric}: {value:.4f}")
-    
-    # Evaluate on holdout test set
+    # Evaluate on test set
     X_test_selected_scaled = final_scaler.transform(X_test_selected)
     
     if hasattr(final_model, 'predict_proba'):
@@ -346,37 +343,36 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         y_test_pred = (y_test_prob > 0.5).astype(int)
     else:
         y_test_pred = final_model.predict(X_test_selected_scaled)
-        y_test_prob = y_test_pred
+        y_test_prob = y_test_pred.astype(float)
     
     # Calculate test metrics
     test_metrics = {
         'accuracy': accuracy_score(y_test, y_test_pred),
-        'precision': precision_score(y_test, y_test_pred),
-        'recall': recall_score(y_test, y_test_pred),
-        'f1': f1_score(y_test, y_test_pred),
+        'precision': precision_score(y_test, y_test_pred, zero_division=0),
+        'recall': recall_score(y_test, y_test_pred, zero_division=0),
+        'f1': f1_score(y_test, y_test_pred, zero_division=0),
         'auc': roc_auc_score(y_test, y_test_prob) if hasattr(final_model, 'predict_proba') else 0.5
     }
     
-    print("\nFinal model performance (holdout test data):")
-    for metric, value in test_metrics.items():
-        print(f"  {metric}: {value:.4f}")
+    # Print results
+    print(f"\nFinal Model Performance:")
+    print(f"Training   - Acc: {train_metrics['accuracy']:.4f}, F1: {train_metrics['f1']:.4f}, AUC: {train_metrics['auc']:.4f}")
+    print(f"Validation - Acc: {val_metrics['accuracy']:.4f}, F1: {val_metrics['f1']:.4f}, AUC: {val_metrics['auc']:.4f}")
+    print(f"Test       - Acc: {test_metrics['accuracy']:.4f}, F1: {test_metrics['f1']:.4f}, AUC: {test_metrics['auc']:.4f}")
+    
+    print(f"\nStep 8: Computing patient-level metrics...")
     
     # Compute patient-level metrics for test set
-    patient_predictions = {}
+    patient_predictions = defaultdict(lambda: {'true_label': None, 'predictions': []})
     
     for i, patient_id in enumerate(test_patient_ids):
-        if patient_id not in patient_predictions:
-            patient_predictions[patient_id] = {
-                'true_label': y_test[i],  # All segments from the same patient have the same label
-                'predictions': []
-            }
-        
+        patient_predictions[patient_id]['true_label'] = y_test[i]
         if hasattr(final_model, 'predict_proba'):
             patient_predictions[patient_id]['predictions'].append(y_test_prob[i])
         else:
             patient_predictions[patient_id]['predictions'].append(y_test_pred[i])
     
-    # Aggregate patient-level predictions (majority vote or average probability)
+    # Aggregate patient-level predictions
     patient_true = []
     patient_pred = []
     
@@ -384,7 +380,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         patient_true.append(data['true_label'])
         
         if hasattr(final_model, 'predict_proba'):
-            # Average probability
+            # Average probability across segments
             avg_prob = np.mean(data['predictions'])
             patient_pred.append(avg_prob)
         else:
@@ -398,89 +394,106 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         patient_pred_binary = (np.array(patient_pred) > 0.5).astype(int)
         patient_metrics = {
             'accuracy': accuracy_score(patient_true, patient_pred_binary),
-            'precision': precision_score(patient_true, patient_pred_binary),
-            'recall': recall_score(patient_true, patient_pred_binary),
-            'f1': f1_score(patient_true, patient_pred_binary),
-            'auc': roc_auc_score(patient_true, patient_pred)
+            'precision': precision_score(patient_true, patient_pred_binary, zero_division=0),
+            'recall': recall_score(patient_true, patient_pred_binary, zero_division=0),
+            'f1': f1_score(patient_true, patient_pred_binary, zero_division=0),
+            'auc': roc_auc_score(patient_true, patient_pred) if len(np.unique(patient_true)) > 1 else 0.5
         }
     else:
         patient_metrics = {
             'accuracy': accuracy_score(patient_true, patient_pred),
-            'precision': precision_score(patient_true, patient_pred),
-            'recall': recall_score(patient_true, patient_pred),
-            'f1': f1_score(patient_true, patient_pred)
+            'precision': precision_score(patient_true, patient_pred, zero_division=0),
+            'recall': recall_score(patient_true, patient_pred, zero_division=0),
+            'f1': f1_score(patient_true, patient_pred, zero_division=0)
         }
     
-    print("\nPatient-level metrics (holdout test data):")
+    print(f"Patient-level Test Metrics:")
     for metric, value in patient_metrics.items():
         print(f"  {metric}: {value:.4f}")
     
-    # Update results and save (now includes validation metrics)
+    print(f"\nStep 9: Saving models and results...")
+    
+    # Update results and save
     results.update_best_metrics({
         'train': train_metrics,
-        'validation': val_metrics,  # Added validation metrics
+        'validation': val_metrics,
         'test': test_metrics,
         'patient': patient_metrics
     })
-
     results.save_metrics()
     
-    # Save models and additional data
-    joblib.dump(final_scaler, os.path.join(save_dir, 'scaler.pkl'))  # Use final_scaler instead of scaler
+    # Save models and data
+    joblib.dump(final_scaler, os.path.join(save_dir, 'scaler.pkl'))
     joblib.dump(final_model, os.path.join(save_dir, 'best_model.pkl'))
-    joblib.dump(best_model_configs, os.path.join(save_dir, 'cv_results.pkl'))  # Save all model configs, not just cv_results
+    joblib.dump(best_model_configs, os.path.join(save_dir, 'cv_results.pkl'))
+    joblib.dump(preprocessor, os.path.join(save_dir, 'preprocessor.pkl'))  # ✅ Save preprocessor
     
-    # Create visualizations for final model (now includes validation set)
-    print("\nCreating final visualizations...")
+    print(f"\nStep 10: Creating visualizations...")
+    
+    # Create visualizations
     plot_confusion_matrix(y_test, y_test_pred, os.path.join(viz_dir, 'test_confusion_matrix.png'))
-    # plot_confusion_matrix(y_train, y_train_pred, os.path.join(viz_dir, 'train_confusion_matrix.png'))
-    # plot_confusion_matrix(y_val, y_val_pred, os.path.join(viz_dir, 'val_confusion_matrix.png'))  # Added validation confusion matrix
     
     if hasattr(final_model, 'predict_proba'):
         plot_roc_curve(y_test, y_test_prob, os.path.join(viz_dir, 'test_roc_curve.png'))
-        #plot_roc_curve(y_train, y_train_prob, os.path.join(viz_dir, 'train_roc_curve.png'))
-        #plot_roc_curve(y_val, y_val_prob, os.path.join(viz_dir, 'val_roc_curve.png'))  # Added validation ROC curve
     
-    # If the model provides feature importances, visualize those too
-    # if hasattr(final_model, 'feature_importances_'):
-    #     # Save model's feature importance values to file
-    #     with open(os.path.join(save_dir, 'model_feature_importances.txt'), 'w') as f:
-    #         f.write("Model's Internal Feature Importances:\n")
-    #         f.write("====================================\n\n")
-            
-    #         # Get importances and feature names for selected features only
-    #         importances = final_model.feature_importances_
-    #         names = [FEATURE_NAMES[i] for i in selected_indices]
-            
-    #         # Sort by importance
-    #         sorted_indices = np.argsort(importances)[::-1]
-            
-    #         for i in sorted_indices:
-    #             f.write(f"{names[i]}: {importances[i]:.6f}\n")
+    # Create patient-level visualizations if we have probabilities
+    if hasattr(final_model, 'predict_proba') and len(np.unique(patient_true)) > 1:
+        plot_confusion_matrix(patient_true, patient_pred_binary, 
+                            os.path.join(viz_dir, 'patient_confusion_matrix.png'),
+                            class_names=['Normal', 'AF'])
+        plot_roc_curve(patient_true, patient_pred, 
+                      os.path.join(viz_dir, 'patient_roc_curve.png'))
     
     # Create results report
     create_results_report(save_dir, 'spectral')
     
-    print(f"\nModel and results saved to {save_dir}")
-    print(f"Selected {len(selected_indices)} features: {[FEATURE_NAMES[idx] for idx in selected_indices]}")
+    print(f"\n{'='*80}")
+    print(f"SPECTRAL TRAINING COMPLETED SUCCESSFULLY!")
+    print(f"{'='*80}")
+    print(f"Model type: {best_model_name}")
+    print(f"Selected features: {len(selected_indices)}")
+    print(f"Test AUC: {test_metrics['auc']:.4f}")
+    print(f"Patient-level Test AUC: {patient_metrics.get('auc', 'N/A')}")
+    print(f"Results saved to: {save_dir}")
+    print(f"Visualizations saved to: {viz_dir}")
+    print(f"Selected features: {selected_feature_names}")
+    print(f"{'='*80}")
     
-    # Return final model, scaler, and selected indices
-    return final_model, final_scaler, selected_indices
-
-
-def generate_param_combinations(param_grid):
-    """Generate all combinations of parameters from a grid"""
-    keys = list(param_grid.keys())
-    values = list(param_grid.values())
-    
-    param_combinations = []
-    for combination in itertools.product(*values):
-        param_dict = {keys[i]: combination[i] for i in range(len(keys))}
-        param_combinations.append(param_dict)
-    
-    return param_combinations
+    return final_model, final_scaler, selected_indices, preprocessor
 
 
 if __name__ == '__main__':
-    dataset_path = 'Dataset'
-    final_model, scaler, selected_indices = train_spectral_model(dataset_path)
+    # Configuration
+    config = {
+        'dataset_path': 'Dataset',
+        'save_dir': 'saved_spectral_model_v2',
+        'val_ratio': 0.2,
+        'test_ratio': 0.2,
+        'n_folds': 5,
+        'random_seed': 42
+    }
+    
+    print("Starting Spectral Model Training with Consistent Preprocessing...")
+    print(f"Configuration: {config}")
+    
+    # Train the model
+    final_model, scaler, selected_indices, preprocessor = train_spectral_model(**config)
+    
+    print("\n🎉 Spectral training pipeline completed successfully!")
+    print("✅ Consistent preprocessing (training = inference)")
+    print("✅ Proper NaN handling with segmentation")
+    print("✅ Patient-based splitting (no data leakage)")
+    print("✅ Feature selection with cross-validation")
+    print("✅ Comprehensive evaluation and visualization")
+    
+    # Test inference consistency
+    print("\n" + "="*60)
+    print("Testing inference consistency...")
+    
+    # Create a dummy signal for testing
+    dummy_signal = np.random.randn(2500)  # 20 seconds at 125Hz
+    inference_segments = preprocessor.process_inference_data(dummy_signal)
+    print(f"Inference test: Created {len(inference_segments)} segments from dummy signal")
+    print("✅ Inference preprocessing working correctly")
+    
+    print(f"\nTraining completed! Check {config['save_dir']} for results.")

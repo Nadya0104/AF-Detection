@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import json
+import os
 from utils.data_processing import PPGInferenceDataset
 
 
@@ -186,18 +188,50 @@ def load_transformer_model(model_path, device='cpu'):
     return model
 
 
-def predict_transformer(ppg_signal, model, device='cpu', batch_size=32):
-    """Get prediction from transformer model"""
-    # Create dataset
-    dataset = PPGInferenceDataset([ppg_signal], context_length=500, sample_rate=50)
+def predict_transformer(ppg_signal, model, device='cpu', batch_size=32, 
+                       model_dir='saved_transformer_model'):
+    """Get prediction from transformer model with training-consistent parameters"""
+    
+    # Load training configuration for consistency
+    config_path = os.path.join(model_dir, 'config.json')
+    if os.path.exists(config_path):
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        context_length = config.get('context_length', 500)
+        stride = config.get('stride', 50)
+        sample_rate = config.get('sample_rate', 50)
+        
+        print(f"Using training config: context_length={context_length}, stride={stride}, sample_rate={sample_rate}")
+    else:
+        # Fallback to training defaults
+        context_length, stride, sample_rate = 500, 50, 50
+        print(f"Config not found, using defaults: context_length={context_length}, stride={stride}, sample_rate={sample_rate}")
+    
+    # Clean signal first (match training preprocessing)
+    clean_indices = ~np.isnan(ppg_signal)
+    if np.any(clean_indices):
+        clean_signal = ppg_signal[clean_indices]
+    else:
+        print("Warning: Signal contains only NaN values, returning default prediction")
+        return 0.5
+    
+    # Create dataset with training-consistent parameters
+    dataset = PPGInferenceDataset(
+        [clean_signal], 
+        context_length=context_length, 
+        sample_rate=sample_rate,
+        stride=stride  # Now matches training
+    )
     
     # If dataset is empty, return default prediction
     if len(dataset) == 0:
+        print("Warning: Dataset is empty after preprocessing, returning default prediction")
         return 0.5
     
     # Create dataloader
     from torch.utils.data import DataLoader
-    loader = DataLoader(dataset, batch_size=batch_size)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     
     # Set model to evaluation mode
     model.eval()
@@ -214,5 +248,7 @@ def predict_transformer(ppg_signal, model, device='cpu', batch_size=32):
     
     # Average predictions from all windows
     avg_prob = np.mean(window_probs)
+    
+    print(f"Processed {len(window_probs)} windows, average probability: {avg_prob:.4f}")
     
     return avg_prob

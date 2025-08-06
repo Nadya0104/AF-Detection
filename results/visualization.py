@@ -48,7 +48,7 @@ def plot_roc_curve(y_true, y_prob, save_path):
 
 
 def create_results_report(results_dir, model_type):
-    """Create a comprehensive results report with model metrics"""
+    """Create a comprehensive results report for both spectral and transformer models"""
     report_path = os.path.join(results_dir, 'results_report.txt')
     
     with open(report_path, 'w') as f:
@@ -96,29 +96,48 @@ def create_results_report(results_dir, model_type):
                         f.write(f"AUC:       {patient_metrics.get('auc', 0):.4f}\n")
                     f.write("\n")
                 
-                # Load CV results to show best model information
-                try:
-                    import joblib
-                    cv_results = joblib.load(os.path.join(results_dir, 'cv_results.pkl'))
+                # Model-specific information
+                if model_type == 'spectral':
+                    # Load CV results to show best model information for spectral
+                    try:
+                        import joblib
+                        cv_results = joblib.load(os.path.join(results_dir, 'cv_results.pkl'))
+                        
+                        # Find the best model based on validation score
+                        best_model_name = None
+                        best_val_score = -1
+                        
+                        for model_name, model_config in cv_results.items():
+                            if model_config['val_score'] > best_val_score:
+                                best_val_score = model_config['val_score']
+                                best_model_name = model_name
+                        
+                        if best_model_name:
+                            f.write("Best Model Information:\n")
+                            f.write("-" * 23 + "\n")
+                            f.write(f"Selected Model: {best_model_name}\n")
+                            f.write(f"Validation Score: {best_val_score:.4f}\n")
+                            f.write(f"Best Parameters: {cv_results[best_model_name]['params']}\n\n")
                     
-                    # Find the best model based on validation score
-                    best_model_name = None
-                    best_val_score = -1
-                    
-                    for model_name, config in cv_results.items():
-                        if config['val_score'] > best_val_score:
-                            best_val_score = config['val_score']
-                            best_model_name = model_name
-                    
-                    if best_model_name:
-                        f.write("Best Model Information:\n")
-                        f.write("-" * 23 + "\n")
-                        f.write(f"Selected Model: {best_model_name}\n")
-                        f.write(f"Validation Score: {best_val_score:.4f}\n")
-                        f.write(f"Best Parameters: {cv_results[best_model_name]['params']}\n\n")
+                    except (FileNotFoundError, ImportError):
+                        f.write("Best model information not available.\n\n")
                 
-                except (FileNotFoundError, ImportError):
-                    f.write("Best model information not available.\n\n")
+                elif model_type == 'transformer':
+                    # Load transformer-specific CV results
+                    try:
+                        with open(os.path.join(results_dir, 'results.json'), 'r') as rf:
+                            transformer_results = json.load(rf)
+                            
+                            f.write("Cross-Validation Results:\n")
+                            f.write("-" * 25 + "\n")
+                            f.write(f"Mean CV AUC: {transformer_results.get('mean_cv_auc', 0):.4f} ± {transformer_results.get('std_cv_auc', 0):.4f}\n")
+                            if 'cv_scores' in transformer_results:
+                                cv_scores = transformer_results['cv_scores']
+                                f.write(f"Fold Scores: {[f'{score:.4f}' for score in cv_scores]}\n")
+                            f.write("\n")
+                    
+                    except FileNotFoundError:
+                        f.write("Cross-validation results not available.\n\n")
                 
                 # Performance interpretation (based on test metrics only)
                 if 'test' in metrics:
@@ -159,31 +178,60 @@ def create_results_report(results_dir, model_type):
         except FileNotFoundError:
             f.write("Best model metrics file not found.\n\n")
         
-        # Load selected features information
-        try:
-            import joblib
-            selected_indices = joblib.load(os.path.join(results_dir, 'selected_indices.pkl'))
-            # Import feature names
-            from models.spectral import FEATURE_NAMES
-            
-            f.write("Feature Selection Summary:\n")
-            f.write("-" * 25 + "\n")
-            f.write(f"Selected {len(selected_indices)} out of {len(FEATURE_NAMES)} features\n")
-            f.write("Selected features:\n")
-            for i, idx in enumerate(selected_indices):
-                f.write(f"  {i+1}. {FEATURE_NAMES[idx]}\n")
-            f.write("\n")
-            
-        except (FileNotFoundError, ImportError):
-            f.write("Feature selection information not available.\n\n")
+        # Model-specific feature/architecture information
+        if model_type == 'spectral':
+            # Load selected features information
+            try:
+                import joblib
+                selected_indices = joblib.load(os.path.join(results_dir, 'selected_indices.pkl'))
+                # Import feature names
+                from models.spectral import FEATURE_NAMES
+                
+                f.write("Feature Selection Summary:\n")
+                f.write("-" * 25 + "\n")
+                f.write(f"Selected {len(selected_indices)} out of {len(FEATURE_NAMES)} features\n")
+                f.write("Selected features:\n")
+                for i, idx in enumerate(selected_indices):
+                    f.write(f"  {i+1}. {FEATURE_NAMES[idx]}\n")
+                f.write("\n")
+                
+            except (FileNotFoundError, ImportError):
+                f.write("Feature selection information not available.\n\n")
+        
+        elif model_type == 'transformer':
+            # Load transformer architecture information
+            try:
+                import torch
+                model_config = torch.load(os.path.join(results_dir, 'model_config.pth'), map_location='cpu')
+                
+                f.write("Model Architecture:\n")
+                f.write("-" * 18 + "\n")
+                f.write(f"Model Dimension: {model_config.get('d_model', 'N/A')}\n")
+                f.write(f"Attention Heads: {model_config.get('num_heads', 'N/A')}\n")
+                f.write(f"Transformer Layers: {model_config.get('num_layers', 'N/A')}\n")
+                f.write(f"Context Length: {model_config.get('context_length', 'N/A')} samples\n")
+                f.write("\n")
+                
+            except (FileNotFoundError, ImportError):
+                f.write("Model architecture information not available.\n\n")
         
         # Summary
         f.write("Summary:\n")
         f.write("-" * 8 + "\n")
-        f.write("This model uses spectral feature extraction combined with\n")
-        f.write("machine learning classification for AF detection from PPG signals.\n")
-        f.write("Patient-level splitting ensures no data leakage between sets.\n")
-        f.write("Recursive feature elimination was used to select optimal features.\n")
+        
+        if model_type == 'spectral':
+            f.write("This model uses spectral feature extraction combined with\n")
+            f.write("machine learning classification for AF detection from PPG signals.\n")
+            f.write("Patient-level splitting ensures no data leakage between sets.\n")
+            f.write("Recursive feature elimination was used to select optimal features.\n")
+        
+        elif model_type == 'transformer':
+            f.write("This transformer model uses temporal patterns in PPG signals\n")
+            f.write("for AF detection. Patient-level splitting ensures no data leakage\n")
+            f.write("between training, validation, and test sets. The model was selected\n")
+            f.write("based on cross-validation performance on the training data.\n")
+            f.write("Consistent preprocessing ensures training and inference compatibility.\n")
+        
         f.write("\nFor visualization results, check the 'visualizations' folder.\n")
 
 

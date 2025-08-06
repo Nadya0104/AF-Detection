@@ -10,14 +10,13 @@ import pandas as pd
 import numpy as np
 import base64
 import io
+import sys
+import os
 from models.transformer import load_transformer_model
 from models.spectral import load_spectral_model 
 from models.transformer import predict_transformer
 from models.spectral import  predict_spectral
 
-# Import your existing models (adjust paths based on your project structure)
-import sys
-import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Initialize Dash app
@@ -128,19 +127,6 @@ app.layout = html.Div([
         html.Div([
             html.H4("Segment Details", style={'color': '#2c3e50'}),
             html.Div(id='segment-details', style={'maxHeight': '300px', 'overflowY': 'auto'})
-        ], className='six columns'),
-    ], className='row', style={'marginTop': 20}),
-    
-    # Additional visualizations
-    html.Div([
-        # Probability distribution
-        html.Div([
-            dcc.Graph(id='probability-dist', style={'height': '300px'})
-        ], className='six columns'),
-        
-        # Feature importance (if available)
-        html.Div([
-            dcc.Graph(id='feature-importance', style={'height': '300px'})
         ], className='six columns'),
     ], className='row', style={'marginTop': 20}),
     
@@ -262,7 +248,8 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
         segment_results = []
         for segment in segments:
             # Get transformer prediction
-            transformer_prob = predict_transformer(segment, transformer_model)
+            transformer_prob = predict_transformer(segment, transformer_model, 
+                                                 model_dir='saved_transformer_model')
             
             # Get spectral prediction  
             spectral_prob = predict_spectral(segment, spectral_model, scaler, selected_indices)
@@ -330,15 +317,12 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
 # Callback for updating summary stats
 @app.callback(
     [Output('summary-stats', 'children'),
-     Output('segment-details', 'children'),
-     Output('probability-dist', 'figure')],
+     Output('segment-details', 'children')],
     [Input('analysis-results', 'children')]
 )
 def update_results_display(analysis_results):
     if analysis_results is None:
-        empty_fig = go.Figure()
-        empty_fig.update_layout(title="No analysis results")
-        return "No results available", "Load and analyze PPG data to see results", empty_fig
+        return "No results available", "Load and analyze PPG data to see results"
     
     try:
         results = eval(analysis_results)
@@ -370,24 +354,10 @@ def update_results_display(analysis_results):
                        style={'color': color, 'margin': '5px 0'})
             )
         
-        # Probability distribution plot
-        probs = results['segment_results']
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(x=probs, nbinsx=20, name='Probability Distribution'))
-        fig.add_vline(x=0.5, line_dash="dash", line_color="red", 
-                      annotation_text="AF Threshold")
-        fig.update_layout(
-            title="AF Probability Distribution",
-            xaxis_title="Probability",
-            yaxis_title="Count"
-        )
-        
-        return summary, segment_details, fig
+        return summary, segment_details
         
     except Exception as e:
-        empty_fig = go.Figure()
-        empty_fig.update_layout(title="Error displaying results")
-        return f"Error: {str(e)}", "Error displaying results", empty_fig
+        return f"Error: {str(e)}", "Error displaying results"
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8050)
+    app.run(debug=False, port=8050)
