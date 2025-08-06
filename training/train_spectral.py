@@ -14,7 +14,7 @@ import itertools
 from collections import defaultdict
 
 # Import the new preprocessor
-from data_processing import SpectralPreprocessor
+from utils.data_processing import SpectralPreprocessor
 from models.spectral import extract_spectral_features, feature_selection, FEATURE_NAMES
 from results.model_results import ModelResults
 from results.visualization import (
@@ -66,7 +66,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
 
     print("Step 1: Loading and segmenting data with SpectralPreprocessor...")
     
-    # ✅ Use SpectralPreprocessor for consistent preprocessing
+    # Use SpectralPreprocessor for consistent preprocessing
     preprocessor = SpectralPreprocessor(min_fragment_size=375, target_fragment_size=1250)
     train_data, val_data, test_data = preprocessor.load_training_data(
         dataset_path, val_ratio=val_ratio, test_ratio=test_ratio, random_seed=random_seed
@@ -115,7 +115,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         'n_folds': n_folds,
         'random_state': random_seed
     })
-    
+
     print(f"\nStep 3: Creating cross-validation folds...")
     # Create CV folds using preprocessor method
     cv_folds = preprocessor.create_cv_folds(train_segments, y_train, train_patient_ids, n_folds=n_folds)
@@ -265,8 +265,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
         train_patient_ids,
         FEATURE_NAMES,
         fs_model,
-        target_features=8,
-        random_state=random_seed
+        target_features=8
     )
     
     selected_feature_names = [FEATURE_NAMES[idx] for idx in selected_indices]
@@ -426,7 +425,7 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     joblib.dump(final_scaler, os.path.join(save_dir, 'scaler.pkl'))
     joblib.dump(final_model, os.path.join(save_dir, 'best_model.pkl'))
     joblib.dump(best_model_configs, os.path.join(save_dir, 'cv_results.pkl'))
-    joblib.dump(preprocessor, os.path.join(save_dir, 'preprocessor.pkl'))  # ✅ Save preprocessor
+     
     
     print(f"\nStep 10: Creating visualizations...")
     
@@ -435,14 +434,6 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     
     if hasattr(final_model, 'predict_proba'):
         plot_roc_curve(y_test, y_test_prob, os.path.join(viz_dir, 'test_roc_curve.png'))
-    
-    # Create patient-level visualizations if we have probabilities
-    if hasattr(final_model, 'predict_proba') and len(np.unique(patient_true)) > 1:
-        plot_confusion_matrix(patient_true, patient_pred_binary, 
-                            os.path.join(viz_dir, 'patient_confusion_matrix.png'),
-                            class_names=['Normal', 'AF'])
-        plot_roc_curve(patient_true, patient_pred, 
-                      os.path.join(viz_dir, 'patient_roc_curve.png'))
     
     # Create results report
     create_results_report(save_dir, 'spectral')
@@ -473,27 +464,11 @@ if __name__ == '__main__':
         'random_seed': 42
     }
     
-    print("Starting Spectral Model Training with Consistent Preprocessing...")
+    print("Starting Spectral Model Training ...")
     print(f"Configuration: {config}")
     
     # Train the model
     final_model, scaler, selected_indices, preprocessor = train_spectral_model(**config)
     
-    print("\n🎉 Spectral training pipeline completed successfully!")
-    print("✅ Consistent preprocessing (training = inference)")
-    print("✅ Proper NaN handling with segmentation")
-    print("✅ Patient-based splitting (no data leakage)")
-    print("✅ Feature selection with cross-validation")
-    print("✅ Comprehensive evaluation and visualization")
+    print("\nSpectral training pipeline completed successfully")
     
-    # Test inference consistency
-    print("\n" + "="*60)
-    print("Testing inference consistency...")
-    
-    # Create a dummy signal for testing
-    dummy_signal = np.random.randn(2500)  # 20 seconds at 125Hz
-    inference_segments = preprocessor.process_inference_data(dummy_signal)
-    print(f"Inference test: Created {len(inference_segments)} segments from dummy signal")
-    print("✅ Inference preprocessing working correctly")
-    
-    print(f"\nTraining completed! Check {config['save_dir']} for results.")

@@ -5,8 +5,11 @@ Visualization functions for model results
 import os
 import numpy as np
 import json
+import joblib
+import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
+from models.spectral import FEATURE_NAMES
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 
 
@@ -67,14 +70,14 @@ def create_results_report(results_dir, model_type):
         except FileNotFoundError:
             f.write("Configuration file not found.\n\n")
         
-        # Load and report best model metrics (TEST SET ONLY)
+        # Load and report best model metrics 
         try:
             with open(os.path.join(results_dir, 'best_metrics.json'), 'r') as mf:
                 metrics = json.load(mf)
                 f.write("Final Model Performance (Test Set):\n")
                 f.write("-" * 36 + "\n\n")
                 
-                # Test metrics only (industry standard)
+                # Test metrics only 
                 if 'test' in metrics:
                     test_metrics = metrics['test']
                     f.write(f"Accuracy:  {test_metrics.get('accuracy', 0):.4f}\n")
@@ -83,7 +86,7 @@ def create_results_report(results_dir, model_type):
                     f.write(f"F1 Score:  {test_metrics.get('f1', 0):.4f}\n")
                     f.write(f"AUC:       {test_metrics.get('auc', 0):.4f}\n\n")
                 
-                # Patient-level metrics (also important for medical applications)
+                # Patient-level metrics 
                 if 'patient' in metrics:
                     f.write("Patient-Level Performance (Test Set):\n")
                     f.write("-" * 34 + "\n")
@@ -100,7 +103,6 @@ def create_results_report(results_dir, model_type):
                 if model_type == 'spectral':
                     # Load CV results to show best model information for spectral
                     try:
-                        import joblib
                         cv_results = joblib.load(os.path.join(results_dir, 'cv_results.pkl'))
                         
                         # Find the best model based on validation score
@@ -139,7 +141,7 @@ def create_results_report(results_dir, model_type):
                     except FileNotFoundError:
                         f.write("Cross-validation results not available.\n\n")
                 
-                # Performance interpretation (based on test metrics only)
+                # Performance interpretation 
                 if 'test' in metrics:
                     test_acc = metrics['test'].get('accuracy', 0)
                     test_f1 = metrics['test'].get('f1', 0)
@@ -182,10 +184,7 @@ def create_results_report(results_dir, model_type):
         if model_type == 'spectral':
             # Load selected features information
             try:
-                import joblib
                 selected_indices = joblib.load(os.path.join(results_dir, 'selected_indices.pkl'))
-                # Import feature names
-                from models.spectral import FEATURE_NAMES
                 
                 f.write("Feature Selection Summary:\n")
                 f.write("-" * 25 + "\n")
@@ -201,7 +200,6 @@ def create_results_report(results_dir, model_type):
         elif model_type == 'transformer':
             # Load transformer architecture information
             try:
-                import torch
                 model_config = torch.load(os.path.join(results_dir, 'model_config.pth'), map_location='cpu')
                 
                 f.write("Model Architecture:\n")

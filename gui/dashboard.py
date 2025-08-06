@@ -12,8 +12,8 @@ import base64
 import io
 import sys
 import os
-from models.transformer import load_transformer_model
-from models.spectral import load_spectral_model 
+# from models.transformer import load_transformer_model
+# from models.spectral import load_spectral_model 
 from models.transformer import predict_transformer
 from models.spectral import  predict_spectral
 
@@ -22,25 +22,45 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Initialize Dash app
 app = dash.Dash(__name__, external_stylesheets=['https://codepen.io/chriddyp/pen/bWLwgP.css'])
 
-# Global variables for models
-transformer_model = None
-spectral_model = None
-scaler = None
-selected_indices = None
+# # Global variables for models
+# transformer_model = None
+# spectral_model = None
+# scaler = None
+# selected_indices = None
+
+
+TRANSFORMER_MODEL_DIR = "saved_transformer_model"
+SPECTRAL_MODEL_DIR = "saved_spectral_model"
 
 # Load models at startup
-def load_models():
-    global transformer_model, spectral_model, scaler, selected_indices
+# Check if models are available at startup
+def check_models():
+    import os
     try:
-        transformer_model = load_transformer_model("saved_transformer_model/transformer_model.pth", 'cpu')
-        spectral_model, scaler, selected_indices = load_spectral_model(
-            "saved_spectral_model/best_model.pkl",
-            "saved_spectral_model/scaler.pkl", 
-            "saved_spectral_model/selected_indices.pkl"
-        )
-        return "Models loaded successfully"
+        # Check if required model files exist
+        transformer_files = [
+            os.path.join(TRANSFORMER_MODEL_DIR, 'transformer_model.pth'),
+            os.path.join(TRANSFORMER_MODEL_DIR, 'model_config.pth')
+        ]
+        
+        spectral_files = [
+            os.path.join(SPECTRAL_MODEL_DIR, 'best_model.pkl'),
+            os.path.join(SPECTRAL_MODEL_DIR, 'scaler.pkl'),
+            os.path.join(SPECTRAL_MODEL_DIR, 'selected_indices.pkl')
+        ]
+        
+        missing_files = []
+        for file in transformer_files + spectral_files:
+            if not os.path.exists(file):
+                missing_files.append(file)
+        
+        if missing_files:
+            return f"Missing model files: {', '.join(missing_files)}"
+        else:
+            return "Models available - ready for analysis"
+            
     except Exception as e:
-        return f"Error loading models: {str(e)}"
+        return f"Error checking models: {str(e)}"
 
 # App layout
 app.layout = html.Div([
@@ -123,11 +143,11 @@ app.layout = html.Div([
             html.Div(id='summary-stats')
         ], className='six columns'),
         
-        # Detailed results
-        html.Div([
-            html.H4("Segment Details", style={'color': '#2c3e50'}),
-            html.Div(id='segment-details', style={'maxHeight': '300px', 'overflowY': 'auto'})
-        ], className='six columns'),
+        # # Detailed results
+        # html.Div([
+        #     html.H4("Segment Details", style={'color': '#2c3e50'}),
+        #     html.Div(id='segment-details', style={'maxHeight': '300px', 'overflowY': 'auto'})
+        # ], className='six columns'),
     ], className='row', style={'marginTop': 20}),
     
     # Hidden div to store data
@@ -148,7 +168,7 @@ def update_data(contents, filename):
     if contents is None:
         empty_fig = go.Figure()
         empty_fig.update_layout(title="Load PPG data to begin analysis")
-        return None, True, load_models(), empty_fig
+        return None, True, check_models(), empty_fig
     
     try:
         # Parse uploaded file
@@ -227,36 +247,43 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
         fs = data_dict['fs']
         
         # Perform analysis (simplified version)
-        segment_size = 1250  # 10 seconds at 125Hz
-        stride = 625  # 5 seconds overlap
-        
-        segments = []
-        segment_indices = []
-        
-        for i in range(0, len(ppg_signal) - segment_size + 1, stride):
-            segments.append(ppg_signal[i:i + segment_size])
-            segment_indices.append(i)
-        
-        if len(segments) == 0:
-            if len(ppg_signal) >= segment_size // 2:
-                segments.append(ppg_signal)
-                segment_indices.append(0)
-            else:
-                return None, "Signal too short for analysis", go.Figure()
-        
-        # Analyze each segment
-        segment_results = []
-        for segment in segments:
-            # Get transformer prediction
-            transformer_prob = predict_transformer(segment, transformer_model, 
-                                                 model_dir='saved_transformer_model')
+        # Get predictions using the proper inference functions
+        try:
+            # Get transformer prediction (handles its own preprocessing)
+            transformer_prob = predict_transformer(ppg_signal, TRANSFORMER_MODEL_DIR)
+            print(f"Transformer prediction: {transformer_prob:.3f}")
             
-            # Get spectral prediction  
-            spectral_prob = predict_spectral(segment, spectral_model, scaler, selected_indices)
+            # Get spectral prediction (handles its own preprocessing) 
+            spectral_prob = predict_spectral(ppg_signal, SPECTRAL_MODEL_DIR)
+            print(f"Spectral prediction: {spectral_prob:.3f}")
             
             # Weighted fusion
             final_prob = (w_transformer * transformer_prob) + ((1 - w_transformer) * spectral_prob)
-            segment_results.append(final_prob)
+            print(f"Final weighted prediction: {final_prob:.3f}")
+            
+            # For visualization, create segments to show on plot
+            # This is just for display purposes, not for actual prediction
+            segment_size = 1250  # 10 seconds at 125Hz
+            stride = 625  # 5 seconds overlap
+            
+            display_segments = []
+            segment_indices = []
+            
+            for i in range(0, len(ppg_signal) - segment_size + 1, stride):
+                display_segments.append(ppg_signal[i:i + segment_size])
+                segment_indices.append(i)
+            
+            if len(display_segments) == 0:
+                if len(ppg_signal) >= segment_size // 2:
+                    display_segments.append(ppg_signal)
+                    segment_indices.append(0)
+            
+            # For visualization, assign the final prediction to all segments
+            segment_results = [final_prob] * len(display_segments)
+            
+        except Exception as pred_error:
+            print(f"Prediction error: {pred_error}")
+            return None, f"Prediction error: {str(pred_error)}", go.Figure()
         
         # Create updated plot with highlighted segments
         time_axis = np.arange(len(ppg_signal)) / fs
@@ -267,26 +294,40 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
                                 mode='lines', name='PPG Signal',
                                 line=dict(color='blue', width=1)))
         
-        # Highlight AF segments
-        for i, (prob, index) in enumerate(zip(segment_results, segment_indices)):
-            start_time = index / fs
-            end_time = start_time + (segment_size / fs)
-            
-            if prob > 0.5:  # AF detected
+        # Highlight AF segments based on overall prediction
+        if final_prob > 0.5:  # AF detected
+            # Highlight the entire signal or segments
+            for i, (prob, index) in enumerate(zip(segment_results, segment_indices)):
+                start_time = index / fs
+                end_time = start_time + (segment_size / fs)
+                
                 fig.add_vrect(
                     x0=start_time, x1=end_time,
                     fillcolor="red", opacity=0.3,
                     layer="below", line_width=0,
                 )
                 
-                # Add annotation
+                # Add annotation only for first segment to avoid clutter
+                if i == 0:
+                    fig.add_annotation(
+                        x=start_time + (end_time - start_time) / 2,
+                        y=max(ppg_signal) * 0.9,
+                        text=f"AF Detected ({final_prob*100:.1f}%)",
+                        showarrow=False,
+                        bgcolor="white",
+                        bordercolor="red"
+                    )
+        else:
+            # Add annotation for normal
+            if len(segment_indices) > 0:
+                mid_time = len(ppg_signal) / fs / 2
                 fig.add_annotation(
-                    x=start_time + (end_time - start_time) / 2,
+                    x=mid_time,
                     y=max(ppg_signal) * 0.9,
-                    text=f"AF ({prob*100:.0f}%)",
+                    text=f"Normal ({final_prob*100:.1f}%)",
                     showarrow=False,
                     bgcolor="white",
-                    bordercolor="red"
+                    bordercolor="green"
                 )
         
         fig.update_layout(
@@ -297,17 +338,20 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
         )
         
         # Store results
+        # Store results
         results_dict = {
-            'segment_results': segment_results,
-            'segment_indices': segment_indices,
+            'transformer_prob': transformer_prob,
+            'spectral_prob': spectral_prob,
+            'final_prob': final_prob,
+            'segment_results': segment_results,  # For display only
+            'segment_indices': segment_indices,  # For display only
             'segment_size': segment_size,
             'total_segments': len(segment_results),
-            'af_segments': sum(1 for prob in segment_results if prob > 0.5),
+            'af_detected': final_prob > 0.5,
             'filename': filename
         }
-        
-        af_count = results_dict['af_segments']
-        status = f"Analysis complete: {'AF detected' if af_count > 0 else 'No AF detected'} ({af_count} segments)"
+
+        status = f"Analysis complete: {'AF detected' if final_prob > 0.5 else 'No AF detected'} (confidence: {final_prob*100:.1f}%)"
         
         return str(results_dict), status, fig
         
@@ -315,49 +359,67 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
         return None, f"Analysis error: {str(e)}", go.Figure()
 
 # Callback for updating summary stats
+# @app.callback(
+#     [Output('summary-stats', 'children'),
+#      Output('segment-details', 'children')],
+#     [Input('analysis-results', 'children')]
+# )
 @app.callback(
-    [Output('summary-stats', 'children'),
-     Output('segment-details', 'children')],
+    Output('summary-stats', 'children'),  # Only keep this output
     [Input('analysis-results', 'children')]
 )
+
 def update_results_display(analysis_results):
     if analysis_results is None:
-        return "No results available", "Load and analyze PPG data to see results"
+        return "No results available"
     
     try:
         results = eval(analysis_results)
         
         # Summary statistics
-        total_segments = results['total_segments']
-        af_segments = results['af_segments']
-        af_percentage = (af_segments / total_segments) * 100 if total_segments > 0 else 0
-        
+        transformer_prob = results['transformer_prob']
+        spectral_prob = results['spectral_prob'] 
+        final_prob = results['final_prob']
+        af_detected = results['af_detected']
+
         summary = html.Div([
             html.P(f"File: {results['filename']}", style={'fontWeight': 'bold'}),
-            html.P(f"Total Segments: {total_segments}"),
-            html.P(f"AF Segments: {af_segments} ({af_percentage:.1f}%)"),
-            html.P(f"Status: {'AF Detected' if af_segments > 0 else 'Normal'}", 
-                   style={'color': 'red' if af_segments > 0 else 'green', 'fontWeight': 'bold'})
+            html.P(f"Transformer Prediction: {transformer_prob:.3f} ({transformer_prob*100:.1f}%)"),
+            html.P(f"Spectral Prediction: {spectral_prob:.3f} ({spectral_prob*100:.1f}%)"),
+            html.P(f"Final Prediction: {final_prob:.3f} ({final_prob*100:.1f}%)"),
+            html.P(f"Status: {'AF Detected' if af_detected else 'Normal'}", 
+                style={'color': 'red' if af_detected else 'green', 'fontWeight': 'bold'})
         ])
         
-        # Detailed segment information
-        segment_details = []
-        for i, (prob, index) in enumerate(zip(results['segment_results'], results['segment_indices'])):
-            start_time = index / 125  # Assuming 125Hz
-            end_time = start_time + (results['segment_size'] / 125)
+        # # Model contributions and segment details
+        # model_info = html.Div([
+        #     html.P("Model Contributions:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+        #     html.P(f"• Transformer: {transformer_prob:.3f} ({transformer_prob*100:.1f}%)", style={'margin': '2px 0', 'fontSize': '13px'}),
+        #     html.P(f"• Spectral: {spectral_prob:.3f} ({spectral_prob*100:.1f}%)", style={'margin': '2px 0', 'fontSize': '13px'}),
+        #     html.P(f"• Final: {final_prob:.3f} ({final_prob*100:.1f}%)", style={'margin': '2px 0', 'fontSize': '13px', 'fontWeight': 'bold'}),
+        #     html.Hr(style={'margin': '10px 0'}),
+        # ])
+
+        # # Detailed segment information  
+        # segment_details = [model_info]
+
+        # # Show segment-by-segment breakdown for visualization
+        # for i, (prob, index) in enumerate(zip(results['segment_results'], results['segment_indices'])):
+        #     start_time = index / 125  # Assuming 125Hz
+        #     end_time = start_time + (results['segment_size'] / 125)
             
-            color = 'red' if prob > 0.5 else 'green'
-            status = 'AF' if prob > 0.5 else 'Normal'
+        #     color = 'red' if prob > 0.5 else 'green'
+        #     status = 'AF' if prob > 0.5 else 'Normal'
             
-            segment_details.append(
-                html.P(f"Segment {i+1}: {status} ({prob:.3f}) - {start_time:.1f}s to {end_time:.1f}s",
-                       style={'color': color, 'margin': '5px 0'})
-            )
+        #     segment_details.append(
+        #         html.P(f"Segment {i+1}: {status} ({prob:.3f}) - {start_time:.1f}s to {end_time:.1f}s",
+        #             style={'color': color, 'margin': '5px 0'})
+        #     )
         
-        return summary, segment_details
+        return summary
         
     except Exception as e:
-        return f"Error: {str(e)}", "Error displaying results"
+        return f"Error: {str(e)}"
 
 if __name__ == '__main__':
     app.run(debug=False, port=8050)

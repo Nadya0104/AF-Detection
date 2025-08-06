@@ -1,5 +1,5 @@
 """
-SpecGroupKFoldral analysis models and feature extraction for AF detection
+Spectral analysis models and feature extraction for AF detection
 """
 
 import numpy as np
@@ -9,14 +9,16 @@ import pywt
 import joblib
 import os
 from sklearn.model_selection import GroupKFold
-from sklearn.metrics import roc_auc_score, accuracy_score
-from sklearn.preprocessing import StandardScaler
-from tqdm import tqdm
+from sklearn.feature_selection import RFECV, SelectKBest, f_classif
+from sklearn.model_selection import GroupKFold
+from collections import Counter
 
 
 
 def extract_spectral_entropy(ppg_segment):
+
     """Extract Spectral Entropy from the frequency domain"""
+
     # Apply FFT
     yf = fft(ppg_segment)
     N = len(ppg_segment)
@@ -39,6 +41,7 @@ def extract_spectral_entropy(ppg_segment):
 
 
 def extract_frequency_bands(ppg_segment, fs=125):
+
     # Apply FFT
     yf = fft(ppg_segment)
     N = len(ppg_segment)
@@ -66,7 +69,7 @@ def extract_frequency_bands(ppg_segment, fs=125):
         resp_power_norm = resp_power / total_power
         cardiac_power_norm = cardiac_power / total_power
         
-        # Calculate meaningful ratios for PPG/AF detection
+        # Calculate meaningful ratios 
         lf_resp_ratio = lf_power / resp_power if resp_power > 0 else 0
         cardiac_resp_ratio = cardiac_power / resp_power if resp_power > 0 else 0
         
@@ -74,12 +77,13 @@ def extract_frequency_bands(ppg_segment, fs=125):
         vlf_power_norm = lf_power_norm = resp_power_norm = cardiac_power_norm = 0
         lf_resp_ratio = cardiac_resp_ratio = 0
     
-    # Return 6 features instead of 3
     return vlf_power_norm, lf_power_norm, resp_power_norm, cardiac_power_norm, lf_resp_ratio, cardiac_resp_ratio
 
 
 def extract_wavelet_features(ppg_segment, wavelet='db4', level=5):
+
     """Extract features from wavelet decomposition (time-frequency domain)"""
+
     try:
         max_level = pywt.dwt_max_level(len(ppg_segment), pywt.Wavelet(wavelet).dec_len)
         coeffs = pywt.wavedec(ppg_segment, wavelet, level=min(level, max_level))
@@ -109,21 +113,11 @@ def extract_wavelet_features(ppg_segment, wavelet='db4', level=5):
         print(f"Warning: Error in wavelet decomposition: {e}")
         return 0, 0, 0, 0, 0, 0
     
+
 def extract_vfcdm_features(ppg_segment, fs=125):
     """
     Extract Variable Frequency Complex Demodulation (VFCDM) features
     
-    Parameters:
-    -----------
-    ppg_segment : numpy array
-        Input PPG signal
-    fs : int
-        Sampling frequency (Hz)
-        
-    Returns:
-    --------
-    numpy array
-        VFCDM features (4 features)
     """
     try:
         # Preprocess - detrend and normalize
@@ -131,14 +125,13 @@ def extract_vfcdm_features(ppg_segment, fs=125):
         ppg_normalized = (ppg_detrended - np.mean(ppg_detrended)) / (np.std(ppg_detrended) if np.std(ppg_detrended) > 0 else 1)
         
         # Use Welch's method to estimate power spectral density
-        # This is a simplified approach compared to full VFCDM
         f, Pxx = signal.welch(ppg_normalized, fs=fs, nperseg=min(256, len(ppg_normalized)), scaling='spectrum')
         
         # Define frequency bands for cardiac and respiratory components
         respiratory_band = (0.15, 0.4)  # Respiratory frequency band (Hz)
         cardiac_band = (0.75, 2.5)      # Cardiac frequency band (Hz)
         
-        # Extract PSD features
+        # Extract features
         resp_indices = np.logical_and(f >= respiratory_band[0], f <= respiratory_band[1])
         resp_power = np.sum(Pxx[resp_indices])
         resp_peak_freq = f[resp_indices][np.argmax(Pxx[resp_indices])] if np.any(resp_indices) else 0
@@ -196,97 +189,12 @@ def extract_spectral_features(ppg_segment):
     
     return features
 
-# def rfe_feature_selection(X, y, patient_ids, model, min_features=1, max_features=None, step=1, verbose=True):
-#     """
-#     Perform Recursive Feature Elimination with Cross-Validation
-    
-#     Parameters:
-#     -----------
-#     X : numpy array
-#         Feature matrix
-#     y : numpy array
-#         Target labels
-#     patient_ids : list or numpy array
-#         Patient IDs for each sample
-#     model : estimator
-#         Model to use for selection
-#     min_features : int
-#         Minimum number of features to select
-#     max_features : int or None
-#         Maximum number of features to select (None means X.shape[1])
-#     step : int
-#         Number of features to remove at each iteration
-#     verbose : bool
-#         Whether to print progress
-    
-#     Returns:
-#     --------
-#     tuple
-#         (selected_indices, cv_scores)
-#     """
-#     from sklearn.feature_selection import RFE, RFECV
-#     from sklearn.model_selection import GroupKFold
-#     import numpy as np
-    
-#     if max_features is None:
-#         max_features = X.shape[1]
-#     else:
-#         max_features = min(max_features, X.shape[1])
-    
-#     # Set up patient-based cross-validation
-#     cv = GroupKFold(n_splits=5)
-    
-#     if verbose:
-#         print("Performing Recursive Feature Elimination with Cross-Validation...")
-#         print(f"Initial feature set size: {X.shape[1]}")
-    
-#     # Create RFECV selector
-#     selector = RFECV(
-#         estimator=model,
-#         step=step,
-#         cv=list(cv.split(X, y, groups=patient_ids)),  # Pre-defined patient-based splits
-#         scoring='roc_auc' if hasattr(model, 'predict_proba') else 'accuracy',
-#         min_features_to_select=min_features,
-#         n_jobs=-1,  # Use all available cores
-#         verbose=1 if verbose else 0
-#     )
-    
-#     # Fit the selector
-#     selector.fit(X, y)
-    
-#     # Get selected features
-#     selected_indices = np.where(selector.support_)[0]
-    
-#     # Limit to max_features if needed
-#     if len(selected_indices) > max_features:
-#         # Use the ranking to select the top max_features
-#         feature_ranks = selector.ranking_
-#         top_indices = np.argsort(feature_ranks)[:max_features]
-#         selected_indices = np.sort(top_indices)  # Keep in original order
-    
-#     # Get CV scores
-#     cv_scores = selector.cv_results_['mean_test_score']
-    
-#     if verbose:
-#         print(f"Optimal number of features: {len(selected_indices)}")
-#         print(f"Selected features: {[FEATURE_NAMES[i] for i in selected_indices]}")
-#         # Use cv_results_ instead of grid_scores_
-#         best_score = np.max(cv_scores)
-#         print(f"Best CV score: {best_score:.4f}")
-    
-#     return selected_indices, cv_scores
-
 
 def feature_selection(X_train, y_train, patient_ids, feature_names, 
-                     base_model, target_features=8, random_state=42):
+                     base_model, target_features=8):
     """
-    Enhanced feature selection with stability analysis
+    Feature selection with stability analysis
     """
-    from sklearn.feature_selection import RFECV, SelectKBest, f_classif
-    from sklearn.model_selection import GroupKFold
-    from collections import Counter
-    
-    print(f"Enhanced feature selection with stability testing...")
     
     # Step 1: Statistical pre-filtering (remove clearly irrelevant features)
     stat_selector = SelectKBest(score_func=f_classif, k=min(12, len(feature_names)))
@@ -300,13 +208,12 @@ def feature_selection(X_train, y_train, patient_ids, feature_names,
     cv = GroupKFold(n_splits=5)
     cv_splits = list(cv.split(X_filtered, y_train, groups=patient_ids))
     
-    # Enhanced RFECV with better parameters
     rfecv = RFECV(
         estimator=base_model,
-        step=1,  # Remove one feature at a time (more thorough)
+        step=1,  # Remove one feature at a time 
         cv=cv_splits,  # Patient-based CV
         scoring='roc_auc',  # Good for imbalanced data
-        min_features_to_select=max(3, target_features-2),  # Reasonable minimum
+        min_features_to_select=max(3, target_features-2), 
         n_jobs=-1,  # Use all cores
         verbose=1
     )
@@ -364,52 +271,143 @@ def feature_selection(X_train, y_train, patient_ids, feature_names,
     # Return in same format as old function
     return final_indices, rfecv.cv_results_['mean_test_score']
 
-def predict_spectral(ppg_segment, model, scaler=None, selected_indices=None):
-    """Get prediction from spectral analysis model"""
-    # Extract features
-    features = extract_spectral_features(ppg_segment)
+# def predict_spectral(ppg_segment, model, scaler=None, selected_indices=None):
+#     """Get prediction from spectral analysis model"""
+#     # Extract features
+#     features = extract_spectral_features(ppg_segment)
     
-    # Select features if indices are provided
-    if selected_indices is not None:
-        features = features[:, selected_indices]
+#     # Select features if indices are provided
+#     if selected_indices is not None:
+#         features = features[:, selected_indices]
     
-    # Scale features if scaler is provided
-    if scaler is not None:
-        features = scaler.transform(features)
+#     # Scale features if scaler is provided
+#     if scaler is not None:
+#         features = scaler.transform(features)
     
-    # Get prediction
-    if hasattr(model, 'predict_proba'):
-        prob = model.predict_proba(features)[0, 1]
-    else:
-        # For models that don't have predict_proba
-        pred = model.predict(features)[0]
-        prob = 1.0 if pred > 0.5 else 0.0
+#     # Get prediction
+#     if hasattr(model, 'predict_proba'):
+#         prob = model.predict_proba(features)[0, 1]
+#     else:
+#         # For models that don't have predict_proba
+#         pred = model.predict(features)[0]
+#         prob = 1.0 if pred > 0.5 else 0.0
     
-    return prob
+#     return prob
 
 
-def load_spectral_model(model_path, scaler_path=None, indices_path=None):
-    """Load a trained spectral model with its scaler and selected indices"""
-    # Load model
-    model = joblib.load(model_path)
+# def load_spectral_model(model_path, scaler_path=None, indices_path=None):
+#     """Load a trained spectral model with its scaler and selected indices"""
+#     # Load model
+#     model = joblib.load(model_path)
     
-    # Load scaler if provided
-    scaler = None
-    if scaler_path is not None and os.path.exists(scaler_path):
-        try:
-            scaler = joblib.load(scaler_path)
-        except Exception as e:
-            print(f"Warning: Could not load scaler from {scaler_path}: {e}")
+#     # Load scaler if provided
+#     scaler = None
+#     if scaler_path is not None and os.path.exists(scaler_path):
+#         try:
+#             scaler = joblib.load(scaler_path)
+#         except Exception as e:
+#             print(f"Warning: Could not load scaler from {scaler_path}: {e}")
     
-    # Load selected feature indices if provided
-    selected_indices = None
-    if indices_path is not None and os.path.exists(indices_path):
-        try:
-            selected_indices = joblib.load(indices_path)
-        except Exception as e:
-            print(f"Warning: Could not load selected indices from {indices_path}: {e}")
+#     # Load selected feature indices if provided
+#     selected_indices = None
+#     if indices_path is not None and os.path.exists(indices_path):
+#         try:
+#             selected_indices = joblib.load(indices_path)
+#         except Exception as e:
+#             print(f"Warning: Could not load selected indices from {indices_path}: {e}")
     
-    return model, scaler, selected_indices
+#     return model, scaler, selected_indices
+
+
+
+def predict_spectral(ppg_signal, model_dir):
+    """
+    Predict using direct preprocessing functions
+    
+    Parameters:
+    -----------
+    ppg_signal : numpy array
+        Raw PPG signal (any length)
+    model_dir : str
+        Directory containing saved model files
+        
+    Returns:
+    --------
+    float
+        Average AF probability across all segments
+    """
+    try:
+        # Load all saved components
+        model = joblib.load(os.path.join(model_dir, 'best_model.pkl'))
+        scaler = joblib.load(os.path.join(model_dir, 'scaler.pkl'))
+        selected_indices = joblib.load(os.path.join(model_dir, 'selected_indices.pkl'))
+        
+        # Create preprocessor with same parameters as training
+        from utils.data_processing import create_spectral_preprocessor_default
+        preprocessor = create_spectral_preprocessor_default()
+        
+        print(f"Loaded model components from {model_dir}")
+        
+        # Use exact same preprocessing as training
+        segments = preprocessor.process_inference_data(ppg_signal)
+        
+        if len(segments) == 0:
+            print("Warning: No valid segments found")
+            return 0.5
+        
+        print(f"Created {len(segments)} segments for inference")
+        
+        # Process each segment (keep existing logic)
+        segment_probs = []
+        for segment in segments:
+            features = extract_spectral_features(segment)
+            
+            if selected_indices is not None:
+                features = features[:, selected_indices]
+            
+            if scaler is not None:
+                features = scaler.transform(features)
+            
+            if hasattr(model, 'predict_proba'):
+                prob = model.predict_proba(features)[0, 1]
+            else:
+                prob = float(model.predict(features)[0])
+            
+            segment_probs.append(prob)
+        
+        final_prediction = np.mean(segment_probs)
+        print(f"Final average prediction: {final_prediction:.3f}")
+        
+        return final_prediction
+        
+    except Exception as e:
+        print(f"Error in spectral prediction: {e}")
+        return 0.5
+
+
+def load_spectral_model(model_dir):
+    """
+    Load complete model with default preprocessor
+    
+    Returns:
+    --------
+    tuple
+        (model, scaler, selected_indices, preprocessor)
+    """
+    try:
+        model = joblib.load(os.path.join(model_dir, 'best_model.pkl'))
+        scaler = joblib.load(os.path.join(model_dir, 'scaler.pkl'))
+        selected_indices = joblib.load(os.path.join(model_dir, 'selected_indices.pkl'))
+        
+        from utils.data_processing import create_spectral_preprocessor_default
+        preprocessor = create_spectral_preprocessor_default()
+        
+        print(f"Successfully loaded complete spectral model from {model_dir}")
+        return model, scaler, selected_indices, preprocessor
+        
+    except Exception as e:
+        print(f"Error loading spectral model: {e}")
+        return None, None, None, None
 
 
 # Feature names for reference

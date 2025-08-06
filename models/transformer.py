@@ -7,9 +7,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import joblib
 import json
 import os
-from utils.data_processing import PPGInferenceDataset
+
 
 
 class MultiHeadAttention(nn.Module):
@@ -179,76 +180,201 @@ class TransformerModel(nn.Module):
         return x.squeeze(-1)
     
 
-def load_transformer_model(model_path, device='cpu'):
-    """Load a trained transformer model"""
-    model = TransformerModel()
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.to(device)
-    model.eval()
-    return model
+# def load_transformer_model(model_path, device='cpu'):
+#     """Load a trained transformer model"""
+#     model = TransformerModel()
+#     model.load_state_dict(torch.load(model_path, map_location=device))
+#     model.to(device)
+#     model.eval()
+#     return model
 
 
-def predict_transformer(ppg_signal, model, device='cpu', batch_size=32, 
-                       model_dir='saved_transformer_model'):
-    """Get prediction from transformer model with training-consistent parameters"""
+# def predict_transformer(ppg_signal, model, device='cpu', batch_size=32, 
+#                        model_dir='saved_transformer_model'):
+#     """Get prediction from transformer model with training-consistent parameters"""
     
-    # Load training configuration for consistency
-    config_path = os.path.join(model_dir, 'config.json')
-    if os.path.exists(config_path):
-        with open(config_path, 'r') as f:
-            config = json.load(f)
+#     # Load training configuration for consistency
+#     config_path = os.path.join(model_dir, 'config.json')
+#     if os.path.exists(config_path):
+#         with open(config_path, 'r') as f:
+#             config = json.load(f)
         
-        context_length = config.get('context_length', 500)
-        stride = config.get('stride', 50)
-        sample_rate = config.get('sample_rate', 50)
+#         context_length = config.get('context_length', 500)
+#         stride = config.get('stride', 50)
+#         sample_rate = config.get('sample_rate', 50)
         
-        print(f"Using training config: context_length={context_length}, stride={stride}, sample_rate={sample_rate}")
-    else:
-        # Fallback to training defaults
-        context_length, stride, sample_rate = 500, 50, 50
-        print(f"Config not found, using defaults: context_length={context_length}, stride={stride}, sample_rate={sample_rate}")
+#         print(f"Using training config: context_length={context_length}, stride={stride}, sample_rate={sample_rate}")
+#     else:
+#         # Fallback to training defaults
+#         context_length, stride, sample_rate = 500, 50, 50
+#         print(f"Config not found, using defaults: context_length={context_length}, stride={stride}, sample_rate={sample_rate}")
     
-    # Clean signal first (match training preprocessing)
-    clean_indices = ~np.isnan(ppg_signal)
-    if np.any(clean_indices):
-        clean_signal = ppg_signal[clean_indices]
-    else:
-        print("Warning: Signal contains only NaN values, returning default prediction")
+#     # Clean signal first (match training preprocessing)
+#     clean_indices = ~np.isnan(ppg_signal)
+#     if np.any(clean_indices):
+#         clean_signal = ppg_signal[clean_indices]
+#     else:
+#         print("Warning: Signal contains only NaN values, returning default prediction")
+#         return 0.5
+    
+#     # Create dataset with training-consistent parameters
+#     dataset = PPGInferenceDataset(
+#         [clean_signal], 
+#         context_length=context_length, 
+#         sample_rate=sample_rate,
+#         stride=stride  # Now matches training
+#     )
+    
+#     # If dataset is empty, return default prediction
+#     if len(dataset) == 0:
+#         print("Warning: Dataset is empty after preprocessing, returning default prediction")
+#         return 0.5
+    
+#     # Create dataloader
+#     from torch.utils.data import DataLoader
+#     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    
+#     # Set model to evaluation mode
+#     model.eval()
+    
+#     # Get predictions
+#     window_probs = []
+    
+#     with torch.no_grad():
+#         for batch_x in loader:
+#             batch_x = batch_x.to(device)
+#             outputs = model(batch_x)
+#             probs = torch.sigmoid(outputs).cpu().numpy()
+#             window_probs.extend(probs)
+    
+#     # Average predictions from all windows
+#     avg_prob = np.mean(window_probs)
+    
+#     print(f"Processed {len(window_probs)} windows, average probability: {avg_prob:.4f}")
+    
+#     return avg_prob
+
+def predict_transformer(ppg_signal, model_dir, device='cpu', batch_size=32):
+    """
+    Predict using direct preprocessing functions
+    
+    Parameters:
+    -----------
+    ppg_signal : numpy array
+        Raw PPG signal (any length)
+    model_dir : str
+        Directory containing saved model files
+    device : str
+        Device to run inference on ('cpu' or 'cuda')
+    batch_size : int
+        Batch size for inference
+        
+    Returns:
+    --------
+    float
+        Average AF probability across all windows
+    """
+    try:
+        # Load model
+        model_config = torch.load(os.path.join(model_dir, 'model_config.pth'), map_location=device)
+        
+        model = TransformerModel(
+            input_dim=1,
+            d_model=model_config['d_model'],
+            num_heads=model_config['num_heads'],
+            num_layers=model_config['num_layers'],
+            ff_dim=model_config['d_model'] * 4,
+            max_seq_len=model_config['context_length'],
+            num_classes=1,
+            dropout=0.2
+        )
+        
+        model.load_state_dict(torch.load(os.path.join(model_dir, 'transformer_model.pth'), map_location=device))
+        model.to(device)
+        model.eval()
+        
+        # Create preprocessor with same parameters as training
+        from utils.data_processing import create_transformer_preprocessor_default
+        preprocessor = create_transformer_preprocessor_default()
+        
+        print(f"Loaded transformer model from {model_dir}")
+        
+        # Use exact same preprocessing as training
+        windows = preprocessor.process_inference_data(ppg_signal)
+        
+        if len(windows) == 0:
+            print("Warning: No valid windows found")
+            return 0.5
+        
+        print(f"Created {len(windows)} windows for inference")
+        
+        # Process windows (keep existing logic)
+        window_tensors = []
+        for window in windows:
+            window_tensor = torch.tensor(window, dtype=torch.float32).unsqueeze(0)
+            window_tensors.append(window_tensor)
+        
+        window_probs = []
+        
+        with torch.no_grad():
+            for i in range(0, len(window_tensors), batch_size):
+                batch_windows = window_tensors[i:i + batch_size]
+                
+                if len(batch_windows) == 1:
+                    batch_input = batch_windows[0].to(device)
+                else:
+                    batch_input = torch.cat(batch_windows, dim=0).to(device)
+                
+                outputs = model(batch_input)
+                probs = torch.sigmoid(outputs).cpu().numpy()
+                
+                if isinstance(probs, np.ndarray):
+                    window_probs.extend(probs.flatten())
+                else:
+                    window_probs.append(float(probs))
+        
+        final_prediction = np.mean(window_probs)
+        print(f"Final average prediction: {final_prediction:.3f}")
+        
+        return final_prediction
+        
+    except Exception as e:
+        print(f"Error in transformer prediction: {e}")
         return 0.5
+
+def load_transformer_model(model_dir, device='cpu'):
+    """
+    Load complete transformer model with default preprocessor
     
-    # Create dataset with training-consistent parameters
-    dataset = PPGInferenceDataset(
-        [clean_signal], 
-        context_length=context_length, 
-        sample_rate=sample_rate,
-        stride=stride  # Now matches training
-    )
-    
-    # If dataset is empty, return default prediction
-    if len(dataset) == 0:
-        print("Warning: Dataset is empty after preprocessing, returning default prediction")
-        return 0.5
-    
-    # Create dataloader
-    from torch.utils.data import DataLoader
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-    
-    # Set model to evaluation mode
-    model.eval()
-    
-    # Get predictions
-    window_probs = []
-    
-    with torch.no_grad():
-        for batch_x in loader:
-            batch_x = batch_x.to(device)
-            outputs = model(batch_x)
-            probs = torch.sigmoid(outputs).cpu().numpy()
-            window_probs.extend(probs)
-    
-    # Average predictions from all windows
-    avg_prob = np.mean(window_probs)
-    
-    print(f"Processed {len(window_probs)} windows, average probability: {avg_prob:.4f}")
-    
-    return avg_prob
+    Returns:
+    --------
+    tuple
+        (model, preprocessor, model_config)
+    """
+    try:
+        model_config = torch.load(os.path.join(model_dir, 'model_config.pth'), map_location=device)
+        
+        model = TransformerModel(
+            input_dim=1,
+            d_model=model_config['d_model'],
+            num_heads=model_config['num_heads'],
+            num_layers=model_config['num_layers'],
+            ff_dim=model_config['d_model'] * 4,
+            max_seq_len=model_config['context_length'],
+            num_classes=1,
+            dropout=0.2
+        )
+        
+        model.load_state_dict(torch.load(os.path.join(model_dir, 'transformer_model.pth'), map_location=device))
+        model.to(device)
+        model.eval()
+        
+        from utils.data_processing import create_transformer_preprocessor_default
+        preprocessor = create_transformer_preprocessor_default()
+        
+        print(f"Successfully loaded complete transformer model from {model_dir}")
+        return model, preprocessor, model_config
+        
+    except Exception as e:
+        print(f"Error loading transformer model: {e}")
+        return None, None, None

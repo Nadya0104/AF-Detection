@@ -17,7 +17,7 @@ import joblib
 from collections import defaultdict
 
 # Import the new preprocessor
-from data_processing import TransformerPreprocessor
+from utils.data_processing import TransformerPreprocessor
 from results.model_results import ModelResults
 from results.visualization import plot_confusion_matrix, plot_roc_curve, create_results_report
 
@@ -361,7 +361,17 @@ def train_transformer_model(dataset_path,
         'n_val_windows': len(val_dataset),
         'n_test_windows': len(test_dataset)
     }
+
+    preprocessing_config = {
+        'model_type': 'transformer',
+        'context_length': context_length,
+        'stride': stride,
+        'sample_rate': sample_rate
+    }
     
+    with open(os.path.join(save_dir, 'preprocessing_config.json'), 'w') as f:
+        json.dump(preprocessing_config, f, indent=4)
+
     # Create CV folds using preprocessor method
     cv_folds = preprocessor.create_cv_folds(
         train_windows, train_labels, train_patient_ids, n_folds=n_folds
@@ -562,9 +572,6 @@ def train_transformer_model(dataset_path,
     
     with open(os.path.join(save_dir, 'results.json'), 'w') as f:
         json.dump(additional_results, f, indent=4)
-    
-    # Save preprocessor for inference consistency
-    joblib.dump(preprocessor, os.path.join(save_dir, 'preprocessor.pkl'))
     
     # Create only essential visualizations using existing functions
     plot_confusion_matrix(test_targets, test_preds, os.path.join(viz_dir, 'test_confusion_matrix.png'))

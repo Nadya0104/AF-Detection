@@ -437,36 +437,51 @@ class TransformerPreprocessor:
             return f"AF_{match.group(1)}" if match else filename
 
 
-# Utility functions for backwards compatibility (if needed)
-def load_and_segment_data(dataset_path, val_ratio=0.2, test_ratio=0.2, random_seed=42):
-    """Backwards compatibility function - uses SpectralPreprocessor"""
-    print("Warning: Using deprecated load_and_segment_data. Use SpectralPreprocessor directly.")
-    preprocessor = SpectralPreprocessor()
-    return preprocessor.load_training_data(dataset_path, val_ratio, test_ratio, random_seed)
+# # Utility functions for backwards compatibility (if needed)
+# def load_and_segment_data(dataset_path, val_ratio=0.2, test_ratio=0.2, random_seed=42):
+#     """Backwards compatibility function - uses SpectralPreprocessor"""
+#     print("Warning: Using deprecated load_and_segment_data. Use SpectralPreprocessor directly.")
+#     preprocessor = SpectralPreprocessor()
+#     return preprocessor.load_training_data(dataset_path, val_ratio, test_ratio, random_seed)
 
 
-if __name__ == '__main__':
-    # Test the preprocessors
-    dataset_path = 'Dataset'
+# if __name__ == '__main__':
+#     # Test the preprocessors
+#     dataset_path = 'Dataset'
     
-    print("=" * 60)
-    print("Testing SpectralPreprocessor")
-    print("=" * 60)
+#     print("=" * 60)
+#     print("Testing SpectralPreprocessor")
+#     print("=" * 60)
     
-    spectral_preprocessor = SpectralPreprocessor()
-    train_data, val_data, test_data = spectral_preprocessor.load_training_data(dataset_path)
+#     spectral_preprocessor = SpectralPreprocessor()
+#     train_data, val_data, test_data = spectral_preprocessor.load_training_data(dataset_path)
     
-    train_segments, train_labels, train_patient_ids, _ = train_data
-    print(f"Training segments: {len(train_segments)}")
-    print(f"Sample segment shape: {train_segments[0].shape if train_segments else 'No segments'}")
+#     train_segments, train_labels, train_patient_ids, _ = train_data
+#     print(f"Training segments: {len(train_segments)}")
+#     print(f"Sample segment shape: {train_segments[0].shape if train_segments else 'No segments'}")
     
-    print("\n" + "=" * 60)
-    print("Testing TransformerPreprocessor")
-    print("=" * 60)
+#     print("\n" + "=" * 60)
+#     print("Testing TransformerPreprocessor")
+#     print("=" * 60)
     
-    transformer_preprocessor = TransformerPreprocessor()
-    train_data, val_data, test_data = transformer_preprocessor.load_training_data(dataset_path)
+#     transformer_preprocessor = TransformerPreprocessor()
+#     train_data, val_data, test_data = transformer_preprocessor.load_training_data(dataset_path)
     
-    train_windows, train_labels, train_patient_ids, _ = train_data
-    print(f"Training windows: {len(train_windows)}")
-    print(f"Sample window shape: {train_windows[0].shape if train_windows else 'No windows'}")
+#     train_windows, train_labels, train_patient_ids, _ = train_data
+#     print(f"Training windows: {len(train_windows)}")
+#     print(f"Sample window shape: {train_windows[0].shape if train_windows else 'No windows'}")
+
+def create_spectral_preprocessor_default():
+    """Create SpectralPreprocessor with default training parameters"""
+    return SpectralPreprocessor(
+        min_fragment_size=375,  # 3 seconds at 125Hz  
+        target_fragment_size=1250  # 10 seconds at 125Hz
+    )
+
+def create_transformer_preprocessor_default():
+    """Create TransformerPreprocessor with default training parameters"""
+    return TransformerPreprocessor(
+        context_length=500,
+        stride=50, 
+        sample_rate=50
+    )
