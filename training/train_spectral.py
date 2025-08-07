@@ -1,5 +1,5 @@
 """
-Complete Spectral Training Script using SpectralPreprocessor
+Complete Spectral Training Script
 """
 
 import os
@@ -12,8 +12,6 @@ from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, reca
 import joblib
 import itertools
 from collections import defaultdict
-
-# Import the new preprocessor
 from utils.data_processing import SpectralPreprocessor
 from models.spectral import extract_spectral_features, feature_selection, FEATURE_NAMES
 from results.model_results import ModelResults
@@ -30,7 +28,7 @@ def extract_features_from_segments(segments):
     features = []
     for segment in segments:
         feature_vector = extract_spectral_features(segment)
-        features.append(feature_vector[0])  # extract_spectral_features returns (1, n_features)
+        features.append(feature_vector[0])
     return np.array(features)
 
 
@@ -50,10 +48,11 @@ def generate_param_combinations(param_grid):
 def train_spectral_model(dataset_path, save_dir='saved_spectral_model', 
                         val_ratio=0.2, test_ratio=0.2, n_folds=5, random_seed=42):
     """
-    Train spectral analysis model using SpectralPreprocessor for consistent preprocessing
+    Train spectral analysis model
     """
+
     print("=" * 80)
-    print("SPECTRAL MODEL TRAINING with Consistent Preprocessor")
+    print("SPECTRAL MODEL TRAINING")
     print("=" * 80)
     
     # Initialize results tracker
@@ -64,9 +63,9 @@ def train_spectral_model(dataset_path, save_dir='saved_spectral_model',
     viz_dir = os.path.join(save_dir, 'visualizations')
     os.makedirs(viz_dir, exist_ok=True)
 
-    print("Step 1: Loading and segmenting data with SpectralPreprocessor...")
+    print("Step 1: Loading and segmenting data ...")
     
-    # Use SpectralPreprocessor for consistent preprocessing
+    # Use SpectralPreprocessor
     preprocessor = SpectralPreprocessor(min_fragment_size=375, target_fragment_size=1250)
     train_data, val_data, test_data = preprocessor.load_training_data(
         dataset_path, val_ratio=val_ratio, test_ratio=test_ratio, random_seed=random_seed

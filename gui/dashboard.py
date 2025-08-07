@@ -1,6 +1,5 @@
 """
 AF Detection Dashboard using Plotly Dash
-Replacement for PyQt5 GUI with better visualization capabilities
 """
 
 import dash
@@ -12,8 +11,6 @@ import base64
 import io
 import sys
 import os
-# from models.transformer import load_transformer_model
-# from models.spectral import load_spectral_model 
 from models.transformer import predict_transformer
 from models.spectral import  predict_spectral
 
@@ -22,20 +19,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Initialize Dash app
 app = dash.Dash(__name__, external_stylesheets=['https://codepen.io/chriddyp/pen/bWLwgP.css'])
 
-# # Global variables for models
-# transformer_model = None
-# spectral_model = None
-# scaler = None
-# selected_indices = None
-
-
+# Global variables for models
 TRANSFORMER_MODEL_DIR = "saved_transformer_model"
 SPECTRAL_MODEL_DIR = "saved_spectral_model"
 
-# Load models at startup
 # Check if models are available at startup
 def check_models():
-    import os
     try:
         # Check if required model files exist
         transformer_files = [
@@ -97,8 +86,8 @@ app.layout = html.Div([
                 id='weight-dropdown',
                 options=[
                     {'label': '50/50 Blend', 'value': 0.5},
-                    {'label': 'Favor Transformer (70%)', 'value': 0.7},
-                    {'label': 'Favor Spectral (30%)', 'value': 0.3},
+                    {'label': 'Favor Transformer (70/30)', 'value': 0.7},
+                    {'label': 'Favor Spectral (70/30)', 'value': 0.3},
                     {'label': 'Transformer Only', 'value': 1.0},
                     {'label': 'Spectral Only', 'value': 0.0}
                 ],
@@ -142,12 +131,6 @@ app.layout = html.Div([
             html.H4("Analysis Summary", style={'color': '#2c3e50'}),
             html.Div(id='summary-stats')
         ], className='six columns'),
-        
-        # # Detailed results
-        # html.Div([
-        #     html.H4("Segment Details", style={'color': '#2c3e50'}),
-        #     html.Div(id='segment-details', style={'maxHeight': '300px', 'overflowY': 'auto'})
-        # ], className='six columns'),
     ], className='row', style={'marginTop': 20}),
     
     # Hidden div to store data
@@ -188,7 +171,7 @@ def update_data(contents, filename):
             else:
                 raise ValueError("No numeric columns found")
         
-        # Handle NaN values
+        # # Handle NaN values
         if np.isnan(ppg_signal).any():
             ppg_signal = pd.Series(ppg_signal).interpolate().values
         
@@ -225,6 +208,7 @@ def update_data(contents, filename):
         empty_fig.update_layout(title="Error loading file")
         return None, True, f"Error loading file: {str(e)}", empty_fig
 
+
 # Callback for analysis
 @app.callback(
     [Output('analysis-results', 'children'),
@@ -246,14 +230,14 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
         filename = data_dict['filename']
         fs = data_dict['fs']
         
-        # Perform analysis (simplified version)
+        # Perform analysis
         # Get predictions using the proper inference functions
         try:
-            # Get transformer prediction (handles its own preprocessing)
+            # Get transformer prediction 
             transformer_prob = predict_transformer(ppg_signal, TRANSFORMER_MODEL_DIR)
             print(f"Transformer prediction: {transformer_prob:.3f}")
             
-            # Get spectral prediction (handles its own preprocessing) 
+            # Get spectral prediction 
             spectral_prob = predict_spectral(ppg_signal, SPECTRAL_MODEL_DIR)
             print(f"Spectral prediction: {spectral_prob:.3f}")
             
@@ -261,10 +245,8 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
             final_prob = (w_transformer * transformer_prob) + ((1 - w_transformer) * spectral_prob)
             print(f"Final weighted prediction: {final_prob:.3f}")
             
-            # For visualization, create segments to show on plot
-            # This is just for display purposes, not for actual prediction
             segment_size = 1250  # 10 seconds at 125Hz
-            stride = 625  # 5 seconds overlap
+            stride = 625  
             
             display_segments = []
             segment_indices = []
@@ -338,13 +320,12 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
         )
         
         # Store results
-        # Store results
         results_dict = {
             'transformer_prob': transformer_prob,
             'spectral_prob': spectral_prob,
             'final_prob': final_prob,
-            'segment_results': segment_results,  # For display only
-            'segment_indices': segment_indices,  # For display only
+            'segment_results': segment_results,  
+            'segment_indices': segment_indices,  
             'segment_size': segment_size,
             'total_segments': len(segment_results),
             'af_detected': final_prob > 0.5,
@@ -358,17 +339,11 @@ def analyze_signal(n_clicks, stored_data, w_transformer):
     except Exception as e:
         return None, f"Analysis error: {str(e)}", go.Figure()
 
-# Callback for updating summary stats
-# @app.callback(
-#     [Output('summary-stats', 'children'),
-#      Output('segment-details', 'children')],
-#     [Input('analysis-results', 'children')]
-# )
+
 @app.callback(
-    Output('summary-stats', 'children'),  # Only keep this output
+    Output('summary-stats', 'children'),  
     [Input('analysis-results', 'children')]
 )
-
 def update_results_display(analysis_results):
     if analysis_results is None:
         return "No results available"
@@ -390,31 +365,6 @@ def update_results_display(analysis_results):
             html.P(f"Status: {'AF Detected' if af_detected else 'Normal'}", 
                 style={'color': 'red' if af_detected else 'green', 'fontWeight': 'bold'})
         ])
-        
-        # # Model contributions and segment details
-        # model_info = html.Div([
-        #     html.P("Model Contributions:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
-        #     html.P(f"• Transformer: {transformer_prob:.3f} ({transformer_prob*100:.1f}%)", style={'margin': '2px 0', 'fontSize': '13px'}),
-        #     html.P(f"• Spectral: {spectral_prob:.3f} ({spectral_prob*100:.1f}%)", style={'margin': '2px 0', 'fontSize': '13px'}),
-        #     html.P(f"• Final: {final_prob:.3f} ({final_prob*100:.1f}%)", style={'margin': '2px 0', 'fontSize': '13px', 'fontWeight': 'bold'}),
-        #     html.Hr(style={'margin': '10px 0'}),
-        # ])
-
-        # # Detailed segment information  
-        # segment_details = [model_info]
-
-        # # Show segment-by-segment breakdown for visualization
-        # for i, (prob, index) in enumerate(zip(results['segment_results'], results['segment_indices'])):
-        #     start_time = index / 125  # Assuming 125Hz
-        #     end_time = start_time + (results['segment_size'] / 125)
-            
-        #     color = 'red' if prob > 0.5 else 'green'
-        #     status = 'AF' if prob > 0.5 else 'Normal'
-            
-        #     segment_details.append(
-        #         html.P(f"Segment {i+1}: {status} ({prob:.3f}) - {start_time:.1f}s to {end_time:.1f}s",
-        #             style={'color': color, 'margin': '5px 0'})
-        #     )
         
         return summary
         

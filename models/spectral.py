@@ -12,6 +12,7 @@ from sklearn.model_selection import GroupKFold
 from sklearn.feature_selection import RFECV, SelectKBest, f_classif
 from sklearn.model_selection import GroupKFold
 from collections import Counter
+from utils.data_processing import create_spectral_preprocessor_default
 
 
 
@@ -105,7 +106,7 @@ def extract_wavelet_features(ppg_segment, wavelet='db4', level=5):
             else:
                 detail_energy.append(0)
         
-        while len(detail_energy) < 3:  # Ensure we always have 3 values
+        while len(detail_energy) < 3: 
             detail_energy.append(0)
         
         return MAVcA, AEcA, STDcA, detail_energy[0], detail_energy[1], detail_energy[2]
@@ -271,70 +272,11 @@ def feature_selection(X_train, y_train, patient_ids, feature_names,
     # Return in same format as old function
     return final_indices, rfecv.cv_results_['mean_test_score']
 
-# def predict_spectral(ppg_segment, model, scaler=None, selected_indices=None):
-#     """Get prediction from spectral analysis model"""
-#     # Extract features
-#     features = extract_spectral_features(ppg_segment)
-    
-#     # Select features if indices are provided
-#     if selected_indices is not None:
-#         features = features[:, selected_indices]
-    
-#     # Scale features if scaler is provided
-#     if scaler is not None:
-#         features = scaler.transform(features)
-    
-#     # Get prediction
-#     if hasattr(model, 'predict_proba'):
-#         prob = model.predict_proba(features)[0, 1]
-#     else:
-#         # For models that don't have predict_proba
-#         pred = model.predict(features)[0]
-#         prob = 1.0 if pred > 0.5 else 0.0
-    
-#     return prob
-
-
-# def load_spectral_model(model_path, scaler_path=None, indices_path=None):
-#     """Load a trained spectral model with its scaler and selected indices"""
-#     # Load model
-#     model = joblib.load(model_path)
-    
-#     # Load scaler if provided
-#     scaler = None
-#     if scaler_path is not None and os.path.exists(scaler_path):
-#         try:
-#             scaler = joblib.load(scaler_path)
-#         except Exception as e:
-#             print(f"Warning: Could not load scaler from {scaler_path}: {e}")
-    
-#     # Load selected feature indices if provided
-#     selected_indices = None
-#     if indices_path is not None and os.path.exists(indices_path):
-#         try:
-#             selected_indices = joblib.load(indices_path)
-#         except Exception as e:
-#             print(f"Warning: Could not load selected indices from {indices_path}: {e}")
-    
-#     return model, scaler, selected_indices
-
-
 
 def predict_spectral(ppg_signal, model_dir):
     """
     Predict using direct preprocessing functions
     
-    Parameters:
-    -----------
-    ppg_signal : numpy array
-        Raw PPG signal (any length)
-    model_dir : str
-        Directory containing saved model files
-        
-    Returns:
-    --------
-    float
-        Average AF probability across all segments
     """
     try:
         # Load all saved components
@@ -343,7 +285,6 @@ def predict_spectral(ppg_signal, model_dir):
         selected_indices = joblib.load(os.path.join(model_dir, 'selected_indices.pkl'))
         
         # Create preprocessor with same parameters as training
-        from utils.data_processing import create_spectral_preprocessor_default
         preprocessor = create_spectral_preprocessor_default()
         
         print(f"Loaded model components from {model_dir}")
@@ -357,7 +298,7 @@ def predict_spectral(ppg_signal, model_dir):
         
         print(f"Created {len(segments)} segments for inference")
         
-        # Process each segment (keep existing logic)
+        # Process each segment 
         segment_probs = []
         for segment in segments:
             features = extract_spectral_features(segment)
@@ -383,31 +324,6 @@ def predict_spectral(ppg_signal, model_dir):
     except Exception as e:
         print(f"Error in spectral prediction: {e}")
         return 0.5
-
-
-def load_spectral_model(model_dir):
-    """
-    Load complete model with default preprocessor
-    
-    Returns:
-    --------
-    tuple
-        (model, scaler, selected_indices, preprocessor)
-    """
-    try:
-        model = joblib.load(os.path.join(model_dir, 'best_model.pkl'))
-        scaler = joblib.load(os.path.join(model_dir, 'scaler.pkl'))
-        selected_indices = joblib.load(os.path.join(model_dir, 'selected_indices.pkl'))
-        
-        from utils.data_processing import create_spectral_preprocessor_default
-        preprocessor = create_spectral_preprocessor_default()
-        
-        print(f"Successfully loaded complete spectral model from {model_dir}")
-        return model, scaler, selected_indices, preprocessor
-        
-    except Exception as e:
-        print(f"Error loading spectral model: {e}")
-        return None, None, None, None
 
 
 # Feature names for reference
