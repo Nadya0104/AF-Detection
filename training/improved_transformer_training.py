@@ -1,6 +1,5 @@
 """
-Clean Transformer Training Script using TransformerPreprocessor
-Creates only essential outputs: test confusion matrix, test ROC curve, detailed report
+Transformer Training Script
 """
 
 import os
@@ -13,16 +12,12 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                            f1_score, roc_auc_score)
 import json
 import math
-import joblib
 from collections import defaultdict
-
-# Import the new preprocessor
 from utils.data_processing import TransformerPreprocessor
-from results.model_results import ModelResults
-from results.visualization import plot_confusion_matrix, plot_roc_curve, create_results_report
+from results.model_results import ModelResults, plot_confusion_matrix, plot_roc_curve, create_results_report
 
 
-# ============= Model Architecture Components =============
+# Model Architecture Components
 
 class MultiHeadAttention(nn.Module):
     """Multi-head attention mechanism"""
@@ -188,7 +183,9 @@ class TransformerModel(nn.Module):
         return x.squeeze(-1)
 
 
-# ============= Dataset and Training Functions =============
+
+
+# Dataset and Training Functions
 
 class PPGTransformerDataset(Dataset):
     """Dataset for transformer training - uses preprocessed windows"""
@@ -294,7 +291,7 @@ def train_transformer_model(dataset_path,
                           random_seed=42,
                           save_dir='saved_transformer_model'):
     """
-    Train transformer model using TransformerPreprocessor for consistent preprocessing
+    Train transformer model using TransformerPreprocessor 
     """
     
     print("TRANSFORMER MODEL TRAINING")
@@ -573,11 +570,9 @@ def train_transformer_model(dataset_path,
     with open(os.path.join(save_dir, 'results.json'), 'w') as f:
         json.dump(additional_results, f, indent=4)
     
-    # Create only essential visualizations using existing functions
+    
     plot_confusion_matrix(test_targets, test_preds, os.path.join(viz_dir, 'test_confusion_matrix.png'))
     plot_roc_curve(test_targets, test_probs, os.path.join(viz_dir, 'test_roc_curve.png'))
-    
-    # Create detailed report using existing function
     create_results_report(save_dir, 'transformer')
     
     print(f"TRAINING COMPLETED! Results saved to: {save_dir}, Test AUC: {test_auc:.4f}")
