@@ -106,12 +106,6 @@ app.layout = html.Div([
         ], className='four columns'),
     ], className='row', style={'marginBottom': 20}),
     
-    # Progress bar
-    html.Div([
-        dcc.Interval(id='progress-interval', interval=500, disabled=True),
-        html.Div(id='progress-bar', style={'display': 'none'})
-    ]),
-    
     # Status message
     html.Div(id='status-message', 
              style={'textAlign': 'center', 'marginBottom': 20, 'fontSize': '14px'}),
@@ -171,7 +165,7 @@ def update_data(contents, filename):
             else:
                 raise ValueError("No numeric columns found")
         
-        # # Handle NaN values
+        # Handle NaN values
         if np.isnan(ppg_signal).any():
             ppg_signal = pd.Series(ppg_signal).interpolate().values
         
