@@ -19,14 +19,6 @@ class ModelResults:
     def __init__(self, model_type, save_dir):
         self.model_type = model_type  # 'transformer' or 'spectral'
         self.save_dir = save_dir
-        self.history = {
-            'train_loss': [],
-            'val_loss': [],
-            'val_accuracy': [],
-            'val_f1': [],
-            'val_precision': [],
-            'val_recall': []
-        }
         self.best_metrics = {}
         self.config = {}
         

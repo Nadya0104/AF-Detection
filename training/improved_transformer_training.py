@@ -366,7 +366,7 @@ def train_transformer_model(dataset_path,
         'sample_rate': sample_rate
     }
     
-    with open(os.path.join(save_dir, 'preprocessing_config.json'), 'w') as f:
+    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
         json.dump(preprocessing_config, f, indent=4)
 
     # Create CV folds using preprocessor method
