@@ -44,12 +44,14 @@ class SpectralPreprocessor:
     
     def process_inference_data(self, ppg_signal):
         """Process new PPG signal for inference - SAME logic as training"""
+
         segments = self._create_segments(ppg_signal)
         print(f"Created {len(segments)} segments for inference")
         return segments
     
-    def create_cv_folds(self, segments, labels, patient_ids, n_folds=5, random_state=42):
+    def create_cv_folds(self, segments, labels, patient_ids, n_folds=5):
         """Create cross-validation folds based on patient IDs"""
+
         # Convert to numpy arrays
         labels = np.array(labels)
         patient_ids = np.array(patient_ids)
@@ -86,6 +88,7 @@ class SpectralPreprocessor:
     
     def _process_file(self, folder_path, filename, all_patient_data, label):
         """Process single CSV file"""
+
         patient_id = self._extract_patient_id(filename)
         file_path = os.path.join(folder_path, filename)
         
@@ -113,6 +116,7 @@ class SpectralPreprocessor:
     
     def _create_segments(self, ppg_data):
         """Create segments from PPG signal - handles NaN properly"""
+
         segments = []
         current_segment = []
         
@@ -137,6 +141,7 @@ class SpectralPreprocessor:
     
     def _split_data(self, all_patient_data, val_ratio, test_ratio, random_seed):
         """Split data by patients to prevent leakage"""
+
         patients = list(all_patient_data.keys())
         patient_labels = []
         
@@ -175,6 +180,7 @@ class SpectralPreprocessor:
     
     def _create_split_data(self, patient_list, all_patient_data, split_name):
         """Convert patient data to segment lists"""
+
         segments, labels, patient_ids, filenames = [], [], [], []
         
         for patient_id in patient_list:
@@ -191,6 +197,7 @@ class SpectralPreprocessor:
     
     def _extract_patient_id(self, filename):
         """Extract unique patient ID"""
+
         if "non_af" in filename:
             match = re.search(r'non_af_(\d+)', filename)
             return f"HEALTHY_{match.group(1)}" if match else filename
@@ -234,12 +241,14 @@ class TransformerPreprocessor:
     
     def process_inference_data(self, ppg_signal):
         """Process new PPG signal for inference - SAME logic as training"""
+
         windows = self._create_windows(ppg_signal)
         print(f"Created {len(windows)} windows for inference")
         return windows
     
-    def create_cv_folds(self, windows, labels, patient_ids, n_folds=5, random_state=42):
+    def create_cv_folds(self, windows, labels, patient_ids, n_folds=5):
         """Create cross-validation folds based on patient IDs"""
+
         # Convert to numpy arrays
         labels = np.array(labels)
         patient_ids = np.array(patient_ids)
@@ -276,6 +285,7 @@ class TransformerPreprocessor:
     
     def _process_file(self, folder_path, filename, all_patient_data, label):
         """Process single CSV file"""
+
         patient_id = self._extract_patient_id(filename)
         file_path = os.path.join(folder_path, filename)
         
@@ -303,6 +313,7 @@ class TransformerPreprocessor:
     
     def _create_windows(self, ppg_data):
         """Create windows from PPG signal - proper NaN handling"""
+
         # Step 1: Create clean segments (no NaN gaps)
         segments = self._create_segments(ppg_data)
         
@@ -324,6 +335,7 @@ class TransformerPreprocessor:
     
     def _create_segments(self, ppg_data):
         """Create clean segments by splitting on NaN"""
+
         segments = []
         current_segment = []
         
@@ -348,6 +360,7 @@ class TransformerPreprocessor:
     
     def _sliding_windows(self, signal):
         """Create sliding windows from clean signal"""
+
         windows = []
         for i in range(0, len(signal) - self.context_length + 1, self.stride):
             window = signal[i:i + self.context_length]
@@ -357,6 +370,7 @@ class TransformerPreprocessor:
     
     def _resample_signal(self, signal, target_rate):
         """Resample signal to target rate"""
+
         original_rate = 125
         if target_rate == original_rate:
             return signal
@@ -365,6 +379,7 @@ class TransformerPreprocessor:
     
     def _normalize_signal(self, signal):
         """Z-score normalize signal"""
+
         mean = np.mean(signal)
         std = np.std(signal)
         if std > 0:
@@ -373,6 +388,7 @@ class TransformerPreprocessor:
     
     def _split_data(self, all_patient_data, val_ratio, test_ratio, random_seed):
         """Split data by patients to prevent leakage"""
+
         patients = list(all_patient_data.keys())
         patient_labels = []
         
@@ -411,6 +427,7 @@ class TransformerPreprocessor:
     
     def _create_split_data(self, patient_list, all_patient_data, split_name):
         """Convert patient data to window lists"""
+
         windows, labels, patient_ids, filenames = [], [], [], []
         
         for patient_id in patient_list:
@@ -427,6 +444,7 @@ class TransformerPreprocessor:
     
     def _extract_patient_id(self, filename):
         """Extract unique patient ID"""
+
         if "non_af" in filename:
             match = re.search(r'non_af_(\d+)', filename)
             return f"HEALTHY_{match.group(1)}" if match else filename
@@ -438,6 +456,7 @@ class TransformerPreprocessor:
 
 def create_spectral_preprocessor_default():
     """Create SpectralPreprocessor with default training parameters"""
+
     return SpectralPreprocessor(
         min_fragment_size=375,  # 3 seconds at 125Hz  
         target_fragment_size=1250  # 10 seconds at 125Hz
@@ -445,6 +464,7 @@ def create_spectral_preprocessor_default():
 
 def create_transformer_preprocessor_default():
     """Create TransformerPreprocessor with default training parameters"""
+    
     return TransformerPreprocessor(
         context_length=500,
         stride=50, 
