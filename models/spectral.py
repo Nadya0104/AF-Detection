@@ -269,7 +269,6 @@ def feature_selection(X_train, y_train, patient_ids, feature_names,
         stability_count = feature_stability[name]
         print(f"  {name}: {stability_count}/{len(seeds)} runs")
     
-    # Return in same format as old function
     return final_indices, rfecv.cv_results_['mean_test_score']
 
 
